@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+notebooks/
+scripts/
+data/
+tests/
+src/kbank/app/

@@ -1,2 +1,2 @@
-# KaptiveBank
-Geno-glycomic database for bacterial glycans
+# KBank
+Geno-glycomic database for bacterial surface polysaccharides
