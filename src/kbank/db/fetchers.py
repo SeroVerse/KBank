@@ -15,9 +15,9 @@ from pathlib import Path
 
 import polars as pl
 
-from kbank.glycan.db.matcher import KaptiveLocusMatcher
-from kbank.glycan.db.models import GlycanRecord
-from kbank.glycan.glycan import Glycan
+from kbank.db.matcher import KaptiveLocusMatcher
+from kbank.db.models import GlycanRecord
+from kbank.glycan import Glycan
 
 
 def _clean_html(text: str | None) -> str | None:

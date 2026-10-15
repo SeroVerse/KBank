@@ -1,12 +1,3 @@
-"""Structure-of-Arrays (SoA) container for consolidated bacterial glycan records.
-
-Provides GlycanRecords, a high-performance batched container supporting vectorized
-filtering, boolean masking via __getitem__, embedded Glycans batch models, and
-pickle-based persistence.
-"""
-
-from __future__ import annotations
-
 import pickle
 from collections.abc import AsyncIterable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
@@ -14,10 +5,10 @@ from pathlib import Path
 from typing import Any, Self
 
 import numpy as np
-from kaptive.core.collections import BatchedContainer
+from serogen.core.collections import BatchedContainer
 
-from kbank.glycan.db.models import GlycanRecord
-from kbank.glycan.glycan import Glycan, Glycans
+from kbank.db.models import GlycanRecord
+from kbank.glycan import Glycan, Glycans
 
 
 @dataclass(slots=True, frozen=True)

@@ -231,12 +231,16 @@ class KaptiveLocusMatcher:
         """Tier 1: Exact match against locus set or serotype map."""
         if query in loci_set:
             return query
-        if query in s2l:
-            return s2l[query]
-        if query.upper() in s2l:
-            return s2l[query.upper()]
-        if query.lower() in s2l:
-            return s2l[query.lower()]
+        res = s2l.get(query)
+        if res is not None:
+            return res
+        qu = query.upper()
+        res = s2l.get(qu)
+        if res is not None:
+            return res
+        ql = query.lower()
+        if ql != qu:
+            return s2l.get(ql)
         return None
 
     @classmethod

@@ -8,7 +8,7 @@ readme = { file = "README.md", content-type = "text/markdown" }
 authors = [
     { name = "Tom Stanton", email = "tomdstanton@gmail.com" }
 ]
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -18,7 +18,6 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: 3.15",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
@@ -26,26 +25,15 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "kaptive",
     "numpy",
     "scipy",
+    "serogen",
 ]
 
 [project.optional-dependencies]
-plot = [
-    "plotly"
-]
 db = [
     "duckdb>=1.5.5",
     "pyarrow>=25.0.1",
-]
-app = [
-    "polars",
-    "shiny>=1.8.0",
-    "shinylive>=0.8.12",
-    "shinywidgets>=0.8.1",
-    "shinyswatch",
-    "lucide",
 ]
 curation = [
     "aiohttp>=3.14.3",
@@ -53,22 +41,20 @@ curation = [
     "httpx2>=2.13.0",
     "gb-io",
 ]
-all = ['kbank[plot,db,app,curation]']
+all = ["kbank[db,curation]"]
 
 [dependency-groups]
 docs = [
     "zensical",
-    "zenzic",  # For checking the docs
     "mkdocstrings[python]",
+    "zenzic",  # For checking the docs
 ]
 test = [
     "pytest",
     "hypothesis",
-    "karva",
 ]
 typing = [
     "ty",
-    "scipy-stubs",
 ]
 lint = [
     "ruff",
@@ -116,11 +102,9 @@ missing-type-argument = "error"
 possibly-unresolved-reference = "warn"
 deprecated = "ignore"
 
-[tool.karva.profile.default.coverage]
-branch = true
 
 [tool.uv.sources]
-kaptive = { path = "../Kaptive", editable = true }
+serogen = { path = "../SeroGen", editable = true }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

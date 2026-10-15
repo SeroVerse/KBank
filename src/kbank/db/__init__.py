@@ -1,6 +1,6 @@
 """Consolidated db ingestion, locus matching, and batched records for bacterial glycans."""
 
-from kbank.glycan.db.fetchers import (
+from kbank.db.fetchers import (
     CSDBFetcher,
     ECODABFetcher,
     EK3DFetcher,
@@ -9,9 +9,9 @@ from kbank.glycan.db.fetchers import (
     KEGGFetcher,
     chain_fetchers,
 )
-from kbank.glycan.db.matcher import KaptiveLocusMatcher
-from kbank.glycan.db.models import GlycanRecord
-from kbank.glycan.db.records import GlycanRecords
+from kbank.db.matcher import KaptiveLocusMatcher
+from kbank.db.models import GlycanRecord
+from kbank.db.records import GlycanRecords
 
 __all__ = [
     "CSDBFetcher",

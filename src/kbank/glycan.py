@@ -1,18 +1,18 @@
 """Module for representing a glycan and glycan batches."""
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from enum import IntEnum, IntFlag
 from typing import Any, Self
 
 import numpy as np
-from kaptive.core.collections import BatchedContainer
 from scipy.sparse import csr_array, diags
 from scipy.stats import wasserstein_distance_nd
+from serogen.core.collections import BatchedContainer
+from serogen.core.graph import TAG_EDGE, BitField, DirectedEdge, GraphBatch, GraphModel, IntNode
 
-from kbank.core.graph import BitField, DirectedEdge, GraphBatch, GraphModel, IntNode, TAG_EDGE
-from kbank.glycan.sugars import Sugars
+from kbank.sugars import Sugars
 
 
 # Enums ----------------------------------------------------------------------------------------------------------------
@@ -214,10 +214,13 @@ class LinkageType(IntNode):
     @property
     def name(self) -> bytes:
         """Byte-string representation (e.g. b'b1-4', b'a1-3')."""
-        a_str = b"a" if self.anomer == Anomer.ALPHA else b"b" if self.anomer == Anomer.BETA else b"?"
-        d_str = (b"%d" % self.donor) if self.donor != 0 else b"?"
-        acc_str = (b"%d" % self.acceptor) if self.acceptor != 0 else b"?"
-        return a_str + d_str + b"-" + acc_str
+        anom = self.ANOMER
+        a_b = 97 if anom == Anomer.ALPHA else (98 if anom == Anomer.BETA else 63)
+        d_val = self.DONOR
+        d_b = (48 + d_val) if 0 < d_val <= 9 else 63
+        acc_val = self.ACCEPTOR
+        acc_b = (48 + acc_val) if 0 < acc_val <= 9 else 63
+        return bytes([a_b, d_b, 45, acc_b])
 
     def __contains__(self, item: object) -> bool:
         """Checks if an Anomer or carbon number is part of this linkage."""
@@ -321,40 +324,53 @@ class Glycans(BatchedContainer[Glycan, "Glycans"], GraphBatch):
         )
 
     @classmethod
-    def from_list(cls, glycans: list[Glycan]) -> Self:
-        """Compiles a list of individual Glycans into the SoA format."""
+    def from_list(cls, glycans: Sequence[Glycan]) -> Self:
+        """Compiles a sequence of individual Glycans into SoA batch format."""
         num_glycans = len(glycans)
-        node_offsets = np.zeros(num_glycans + 1, dtype=np.uint32)
-        edge_offsets = np.zeros(num_glycans + 1, dtype=np.uint32)
-        
-        all_monos = []
-        all_sources = []
-        all_targets = []
-        all_links = []
-        canonicals = []
-        
-        mono_offset = 0
+        node_offsets = np.empty(num_glycans + 1, dtype=np.uint32)
+        node_offsets[0] = 0
+        edge_offsets = np.empty(num_glycans + 1, dtype=np.uint32)
+        edge_offsets[0] = 0
+
+        tot_nodes = sum(len(g.nodes) for g in glycans)
+        tot_edges = sum(len(g.edges) for g in glycans)
+
+        node_types = np.empty(tot_nodes, dtype=np.uint32)
+        edge_sources = np.empty(tot_edges, dtype=np.uint32)
+        edge_targets = np.empty(tot_edges, dtype=np.uint32)
+        edge_types = np.empty(tot_edges, dtype=np.uint32)
+        canonicals: list[bytes] = []
+
+        curr_node = 0
+        curr_edge = 0
+
         for i, g in enumerate(glycans):
-            all_monos.extend(g.nodes)
-            
-            for b in g.edges:
-                all_sources.append(b.source + mono_offset)
-                all_targets.append(b.target + mono_offset)
-                all_links.append(b.edge_type)
-                
-            mono_offset += len(g.nodes)
-            node_offsets[i + 1] = mono_offset
-            edge_offsets[i + 1] = len(all_links)
+            n_nodes = len(g.nodes)
+            n_edges = len(g.edges)
+
+            if n_nodes > 0:
+                node_types[curr_node : curr_node + n_nodes] = [int(n) for n in g.nodes]
+
+            if n_edges > 0:
+                for j, b in enumerate(g.edges):
+                    edge_sources[curr_edge + j] = b.source + curr_node
+                    edge_targets[curr_edge + j] = b.target + curr_node
+                    edge_types[curr_edge + j] = int(b.edge_type)
+
+            curr_node += n_nodes
+            curr_edge += n_edges
+            node_offsets[i + 1] = curr_node
+            edge_offsets[i + 1] = curr_edge
             canonicals.append(g.canonical)
-            
+
         return cls(
-            node_types=np.array(all_monos, dtype=np.uint32),
+            node_types=node_types,
             node_offsets=node_offsets,
-            edge_sources=np.array(all_sources, dtype=np.uint32),
-            edge_targets=np.array(all_targets, dtype=np.uint32),
-            edge_types=np.array(all_links, dtype=np.uint32),
+            edge_sources=edge_sources,
+            edge_targets=edge_targets,
+            edge_types=edge_types,
             edge_offsets=edge_offsets,
-            canonicals=tuple(canonicals)
+            canonicals=tuple(canonicals),
         )
 
     def __getitem__(self, item: Any) -> Glycan | Self:
@@ -445,7 +461,7 @@ class Glycans(BatchedContainer[Glycan, "Glycans"], GraphBatch):
 
         # 1. Get initial features
         sugar_indices = self.node_types & 0xFF
-        features = Sugars().to_feature_matrix()[sugar_indices]
+        features = Sugars.to_feature_matrix()[sugar_indices]
 
         # 2. Build undirected batch adjacency matrix for WWL smoothing
         adj_indices = np.concatenate([self.edge_sources, self.edge_targets])

@@ -1,14 +1,11 @@
-r"""Module for defining and representing known monosaccharides and carbohydrate modifiers.
-Provides a unified, type-safe registry (Sugars) with SoA vectorized arrays,
-seamless str/bytes alias resolution.
-"""
+"""Monosaccharide and carbohydrate modifier registry with precomputed SoA physicochemical features."""
+
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterator
+from enum import IntEnum
+
 import numpy as np
-
-from kbank.core.models import Catalog
-
 
 # ----------------------------------------------------------------------------------------------------------------------
 # Canonical Monosaccharide Database Manifest
@@ -78,7 +75,19 @@ _CANONICAL_SUGARS: list[tuple[bytes, bytes, bool, bool, bool, bool, bool, float,
     (b"dHexN", b"RhaN", False, True, True, False, False, 163.17, 0b001, 2, (b"RhapN",)),
     (b"dHexN", b"QuiN4N", False, True, True, False, False, 163.17, 0b000, 1, (b"QuipN4N",)),
     (b"dHexN", b"FucN4N", False, True, True, False, False, 163.17, 0b100, 2, (b"FucpN4N",)),
-    (b"dHexN", b"RhaN3N", False, True, True, False, False, 162.19, 0b001, 2, (b"RhapN3N", b"Rha2N3N", b"Rhap2N3N", b"RhaNAc3NAc", b"RhapNAc3NAc")),
+    (
+        b"dHexN",
+        b"RhaN3N",
+        False,
+        True,
+        True,
+        False,
+        False,
+        162.19,
+        0b001,
+        2,
+        (b"RhapN3N", b"Rha2N3N", b"Rhap2N3N", b"RhaNAc3NAc", b"RhapNAc3NAc"),
+    ),
 
     # Aminohexuronates
     (b"HexNA", b"GalNA", False, False, True, False, False, 193.15, 0b100, 1, (b"GalpNA", b"GalNAcA", b"GalpNAcA")),
@@ -263,31 +272,9 @@ def infer_donor_and_carrier(name: bytes, sugar_class: bytes) -> tuple[bytes, byt
 # Sugars Registry & SoA Database Class
 # ----------------------------------------------------------------------------------------------------------------------
 
-class Sugars(Catalog):
-    """
-    High-performance Structure-of-Arrays (SoA) db for monosaccharides and carbohydrate modifiers.
-    Acts as a lazy class-level singleton (Sugars['Glc'], Sugars.names) with direct contiguous 1D arrays.
-    """
-    _CANONICAL_MANIFEST = _CANONICAL_SUGARS
-    _SOA_ARRAYS = (
-        'names',
-        'classes',
-        'is_ketose',
-        'is_deoxy',
-        'is_amino',
-        'is_n_acetyl',
-        'is_abstract',
-        'mass',
-        'axial_mask',
-        'charge',
-        'natural_chirality',
-        'donor_precursor',
-        'carrier',
-    )
+class Sugars:
+    """High-performance Structure-of-Arrays (SoA) registry for monosaccharides and carbohydrate modifiers."""
 
-    # ------------------------------------------------------------------------------------------------------------------
-    # Vectorized SoA Array Fields with Strict Dimensional & Dtype Type Hints
-    # ------------------------------------------------------------------------------------------------------------------
     names: np.ndarray[tuple[int], np.dtype[np.bytes_]]
     classes: np.ndarray[tuple[int], np.dtype[np.bytes_]]
     is_ketose: np.ndarray[tuple[int], np.dtype[np.bool_]]
@@ -301,113 +288,147 @@ class Sugars(Catalog):
     natural_chirality: np.ndarray[tuple[int], np.dtype[np.uint8]]
     donor_precursor: np.ndarray[tuple[int], np.dtype[np.bytes_]]
     carrier: np.ndarray[tuple[int], np.dtype[np.bytes_]]
+    c2_ax: np.ndarray[tuple[int], np.dtype[np.bool_]]
+    c3_ax: np.ndarray[tuple[int], np.dtype[np.bool_]]
+    c4_ax: np.ndarray[tuple[int], np.dtype[np.bool_]]
 
     name_to_index: dict[bytes, int]
     alias_map: dict[bytes, bytes]
     _aliases: tuple[tuple[bytes, ...], ...]
+    _feature_matrix: np.ndarray[tuple[int, int], np.dtype[np.float32]]
+    Index: type[IntEnum]
 
-    @property
-    def c2_ax(self) -> np.ndarray[tuple[int], np.dtype[np.bool_]]:
-        return (self.axial_mask & 1) != 0
+    @classmethod
+    def resolve_name(cls, name_or_alias: bytes | bytearray | str) -> bytes:
+        """Resolve a name or alias to its canonical bytes name."""
+        bname = name_or_alias.encode("ascii") if isinstance(name_or_alias, str) else bytes(name_or_alias)
+        if bname in cls.alias_map:
+            return cls.alias_map[bname]
+        if bname in cls.name_to_index:
+            return bname
+        bname_lower = bname.lower()
+        if bname_lower in cls.alias_map:
+            return cls.alias_map[bname_lower]
+        bname_cap = bname.capitalize()
+        if bname_cap in cls.name_to_index:
+            return bname_cap
+        if bname_cap in cls.alias_map:
+            return cls.alias_map[bname_cap]
+        return bname
 
-    @property
-    def c3_ax(self) -> np.ndarray[tuple[int], np.dtype[np.bool_]]:
-        return (self.axial_mask & 2) != 0
+    @classmethod
+    def index(cls, key: int | np.integer | bytes | bytearray | str) -> int:
+        """Return integer index for a sugar name, alias, or integer."""
+        if isinstance(key, (int, np.integer)):
+            return int(key)
+        if isinstance(key, (bytes, bytearray, str)):
+            bname = cls.resolve_name(key)
+            if bname in cls.name_to_index:
+                return cls.name_to_index[bname]
+        raise KeyError(f"Sugar '{key!r}' not found in Sugars catalog.")
 
-    @property
-    def c4_ax(self) -> np.ndarray[tuple[int], np.dtype[np.bool_]]:
-        return (self.axial_mask & 4) != 0
+    @classmethod
+    def to_feature_matrix(cls) -> np.ndarray[tuple[int, int], np.dtype[np.float32]]:
+        """Return precomputed `(N, 10)` float32 feature matrix for each sugar."""
+        return cls._feature_matrix
 
-    def init_default(self) -> None:
-        self._init_from_manifest(self._CANONICAL_MANIFEST)
+    def __class_getitem__(cls, key: int | np.integer | bytes | bytearray | str) -> int:
+        """Resolve sugar index via subscript notation (`Sugars[key]`)."""
+        return cls.index(key)
 
-    def _init_from_manifest(
-        self,
-        manifest: Sequence[tuple],
-        alias_map: dict[bytes, bytes] | None = None,
-    ) -> None:
-        N = len(manifest)
-        self.names = np.empty(N, dtype="S16")
-        self.classes = np.empty(N, dtype="S16")
-        self.is_ketose = np.empty(N, dtype=np.bool_)
-        self.is_deoxy = np.empty(N, dtype=np.bool_)
-        self.is_amino = np.empty(N, dtype=np.bool_)
-        self.is_n_acetyl = np.empty(N, dtype=np.bool_)
-        self.is_abstract = np.empty(N, dtype=np.bool_)
-        self.mass = np.empty(N, dtype=np.float32)
-        self.axial_mask = np.empty(N, dtype=np.uint8)
-        self.charge = np.empty(N, dtype=np.int8)
-        self.natural_chirality = np.empty(N, dtype=np.uint8)
-        self.donor_precursor = np.empty(N, dtype="S24")
-        self.carrier = np.empty(N, dtype="S8")
+    def __len__(self) -> int:
+        """Return total number of canonical sugars and modifiers."""
+        return len(self.names)
 
-        self.name_to_index = {}
-        self.alias_map = dict(alias_map) if alias_map is not None else {}
-        aliases_list: list[tuple[bytes, ...]] = []
+    def __iter__(self) -> Iterator[int]:
+        """Iterate over sugar indices."""
+        yield from range(len(self.names))
 
-        for i, item in enumerate(manifest):
-            (s_class, name, ket, d, am, nac, abs_f, m, ax, chi, aliases) = item
-            self.names[i] = name
-            self.classes[i] = s_class
-            self.is_ketose[i] = ket
-            self.is_deoxy[i] = d
-            self.is_amino[i] = am
-            self.is_n_acetyl[i] = nac
-            self.is_abstract[i] = abs_f
-            self.mass[i] = m
-            self.axial_mask[i] = ax
-            self.natural_chirality[i] = chi
+    def __getitem__(self, key: int | np.integer | bytes | bytearray | str) -> int:
+        """Resolve sugar index via instance subscript notation."""
+        return self.index(key)
 
-            # Infer activated donor precursor and carrier nucleotide/cofactor
-            prec, carr = infer_donor_and_carrier(name, s_class)
-            self.donor_precursor[i] = prec
-            self.carrier[i] = carr
 
-            # Infer Charge (-1 for Uronates/Phosphates/Sulfates, +1 for Free Amines/PEtn)
-            ch = 0
-            if s_class in (b"HexA", b"HepA", b"HexNA"):
-                ch = -1
-            elif name in (b"Neu5Ac", b"Neu5Gc", b"Neu", b"Kdn", b"Kdo", b"Pse", b"Leg", b"Aci", b"P", b"Pyr"):
-                ch = -1
-            elif s_class in (b"HexN", b"dHexN") or name in (b"PEtn", b"EtN", b"N", b"Cho"):
-                ch = 1
-            self.charge[i] = ch
+def _init_sugars() -> None:
+    manifest = _CANONICAL_SUGARS
+    n_sugars = len(manifest)
+    Sugars.names = np.empty(n_sugars, dtype="S16")
+    Sugars.classes = np.empty(n_sugars, dtype="S16")
+    Sugars.is_ketose = np.empty(n_sugars, dtype=np.bool_)
+    Sugars.is_deoxy = np.empty(n_sugars, dtype=np.bool_)
+    Sugars.is_amino = np.empty(n_sugars, dtype=np.bool_)
+    Sugars.is_n_acetyl = np.empty(n_sugars, dtype=np.bool_)
+    Sugars.is_abstract = np.empty(n_sugars, dtype=np.bool_)
+    Sugars.mass = np.empty(n_sugars, dtype=np.float32)
+    Sugars.axial_mask = np.empty(n_sugars, dtype=np.uint8)
+    Sugars.charge = np.empty(n_sugars, dtype=np.int8)
+    Sugars.natural_chirality = np.empty(n_sugars, dtype=np.uint8)
+    Sugars.donor_precursor = np.empty(n_sugars, dtype="S24")
+    Sugars.carrier = np.empty(n_sugars, dtype="S8")
 
-            self.name_to_index[name] = i
+    Sugars.name_to_index = {}
+    Sugars.alias_map = {}
+    aliases_list: list[tuple[bytes, ...]] = []
+    enum_members: dict[str, int] = {}
 
-            for al in aliases:
-                self.alias_map[al] = name
+    for i, item in enumerate(manifest):
+        (s_class, name, ket, d, am, nac, abs_f, m, ax, chi, aliases) = item
+        Sugars.names[i] = name
+        Sugars.classes[i] = s_class
+        Sugars.is_ketose[i] = ket
+        Sugars.is_deoxy[i] = d
+        Sugars.is_amino[i] = am
+        Sugars.is_n_acetyl[i] = nac
+        Sugars.is_abstract[i] = abs_f
+        Sugars.mass[i] = m
+        Sugars.axial_mask[i] = ax
+        Sugars.natural_chirality[i] = chi
 
-            aliases_list.append(tuple(aliases))
+        prec, carr = infer_donor_and_carrier(name, s_class)
+        Sugars.donor_precursor[i] = prec
+        Sugars.carrier[i] = carr
 
-        self._aliases = tuple(aliases_list)
-        self._feature_matrix = None
+        ch = 0
+        if s_class in (b"HexA", b"HepA", b"HexNA"):
+            ch = -1
+        elif name in (b"Neu5Ac", b"Neu5Gc", b"Neu", b"Kdn", b"Kdo", b"Pse", b"Leg", b"Aci", b"P", b"Pyr"):
+            ch = -1
+        elif s_class in (b"HexN", b"dHexN") or name in (b"PEtn", b"EtN", b"N", b"Cho"):
+            ch = 1
+        Sugars.charge[i] = ch
 
-    # ------------------------------------------------------------------------------------------------------------------
-    # Feature Matrix for ML & Embeddings
-    # ------------------------------------------------------------------------------------------------------------------
-    def to_feature_matrix(self) -> np.ndarray[tuple[int, int], np.dtype[np.float32]]:
-        """
-        Extracts a normalized, continuous feature representation for each sugar.
-        (Columns: is_ketose, is_deoxy, is_amino, is_n_acetyl, is_abstract, c2_ax, c3_ax, c4_ax, charge, norm_mass).
-        """
-        if self._feature_matrix is not None:
-            return self._feature_matrix
+        Sugars.name_to_index[name] = i
+        s_upper = name.decode("ascii").upper()
+        if s_upper.isidentifier():
+            enum_members[s_upper] = i
 
-        norm_mass = self.mass / 350.0  # normalize masses around [0, 1]
-        features = np.column_stack([
-            self.is_ketose.astype(np.float32),
-            self.is_deoxy.astype(np.float32),
-            self.is_amino.astype(np.float32),
-            self.is_n_acetyl.astype(np.float32),
-            self.is_abstract.astype(np.float32),
-            self.c2_ax.astype(np.float32),
-            self.c3_ax.astype(np.float32),
-            self.c4_ax.astype(np.float32),
-            self.charge.astype(np.float32),
-            norm_mass.astype(np.float32),
-        ])
-        self._feature_matrix = features
-        return features
+        for al in aliases:
+            Sugars.alias_map[al] = name
+
+        aliases_list.append(tuple(aliases))
+
+    Sugars._aliases = tuple(aliases_list)
+    Sugars.c2_ax = (Sugars.axial_mask & 1) != 0
+    Sugars.c3_ax = (Sugars.axial_mask & 2) != 0
+    Sugars.c4_ax = (Sugars.axial_mask & 4) != 0
+
+    features = np.empty((n_sugars, 10), dtype=np.float32)
+    features[:, 0] = Sugars.is_ketose
+    features[:, 1] = Sugars.is_deoxy
+    features[:, 2] = Sugars.is_amino
+    features[:, 3] = Sugars.is_n_acetyl
+    features[:, 4] = Sugars.is_abstract
+    features[:, 5] = Sugars.c2_ax
+    features[:, 6] = Sugars.c3_ax
+    features[:, 7] = Sugars.c4_ax
+    features[:, 8] = Sugars.charge
+    features[:, 9] = Sugars.mass / np.float32(350.0)
+    features.setflags(write=False)
+    Sugars._feature_matrix = features
+    Sugars.Index = IntEnum("SugarsIndex", enum_members)
+
+
+_init_sugars()
+
 
 

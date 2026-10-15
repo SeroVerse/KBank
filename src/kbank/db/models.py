@@ -6,7 +6,7 @@ CSDB, ECODAB, EK3D, EPSDB, and KEGG Glycan.
 
 from dataclasses import dataclass
 
-from kbank.glycan.glycan import Glycan
+from kbank.glycan import Glycan
 
 
 @dataclass(frozen=True, slots=True)
