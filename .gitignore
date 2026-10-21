@@ -211,18 +211,22 @@ tempCodeRunnerFile.py
 # PyPI configuration file
 .pypirc
 
-# Marimo
+# Marimo & IDE files (keep cached notebook session snapshots in scripts/)
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+!scripts/__marimo__/
+scripts/__marimo__/*
+!scripts/__marimo__/session/
+.DS_Store
+
+# Documentation build output
+docs/notebooks/assets/
+docs/overrides/announcement.html
 
 # Streamlit
 .streamlit/secrets.toml
 
 notebooks/
-scripts/
-!scripts/fetch_announcement.py
-docs/overrides/announcement.html
 data/
-tests/
 src/kbank/app/

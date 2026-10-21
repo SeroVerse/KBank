@@ -36,8 +36,21 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
+      - name: Configure uv to install serogen from GitHub
+        run: |
+          python3 -c '
+          from pathlib import Path
+          p = Path("pyproject.toml")
+          p.write_text(
+              p.read_text().replace(
+                  "serogen = { path = \"../SeroGen\", editable = true }",
+                  "serogen = { git = \"https://github.com/seroverse/serogen.git\" }",
+              )
+          )
+          '
+
       - name: Install Python 3.14 & dependencies
-        run: uv sync --frozen --python 3.14 --group lint --group typing
+        run: uv sync --python 3.14 --group lint --group typing
 
       - name: Run Ruff linter
         run: uv run --no-sync ruff check --output-format=github .
@@ -77,8 +90,21 @@ jobs:
           restore-keys: |
             numba-jit-${{ runner.os }}-py${{ matrix.python-version }}-
 
+      - name: Configure uv to install serogen from GitHub
+        run: |
+          python3 -c '
+          from pathlib import Path
+          p = Path("pyproject.toml")
+          p.write_text(
+              p.read_text().replace(
+                  "serogen = { path = \"../SeroGen\", editable = true }",
+                  "serogen = { git = \"https://github.com/seroverse/serogen.git\" }",
+              )
+          )
+          '
+
       - name: Install Python ${{ matrix.python-version }} & test dependencies
-        run: uv sync --frozen --python ${{ matrix.python-version }} --group test
+        run: uv sync --python ${{ matrix.python-version }} --group test
 
       - name: Run pytest suite with coverage
         run: |

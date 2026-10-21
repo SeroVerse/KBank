@@ -1,0 +1,49 @@
+{
+  "version": "1",
+  "metadata": {
+    "marimo_version": "0.24.0",
+    "script_metadata_hash": "002b6b6a92eac5facf259d6bf3183978"
+  },
+  "cells": [
+    {
+      "id": "setup",
+      "code_hash": "2eac6da50e1821f05affc80412519ba1",
+      "outputs": [
+        {
+          "type": "error",
+          "ename": "exception",
+          "evalue": "cannot import name 'GeneLabeller' from 'kbank.bgc.bgc' (/Users/tsta0015/.cache/uv/archive-v0/vDxLs8h49aX_UluN/lib/python3.13/site-packages/kbank/bgc/bgc.py)",
+          "traceback": null
+        }
+      ],
+      "console": [
+        {
+          "type": "stream",
+          "name": "stderr",
+          "text": "<span class=\"codehilite\"><div class=\"highlight\"><pre><span></span><span class=\"gt\">Traceback (most recent call last):</span>\n  File <span class=\"nb\">\"/var/folders/19/34hxf43j6n311w4hcqlhddfm54ck3n/T/marimo_77694/__marimo__cell_setup_.py\"</span>, line <span class=\"m\">5</span>, in <span class=\"n\">&lt;module&gt;</span>\n<span class=\"w\">    </span><span class=\"kn\">from</span><span class=\"w\"> </span><span class=\"nn\">kbank.bgc.bgc</span><span class=\"w\"> </span><span class=\"kn\">import</span> <span class=\"n\">GeneLabeller</span>\n<span class=\"gr\">ImportError</span>: <span class=\"n\">cannot import name 'GeneLabeller' from 'kbank.bgc.bgc' (/Users/tsta0015/.cache/uv/archive-v0/vDxLs8h49aX_UluN/lib/python3.13/site-packages/kbank/bgc/bgc.py)</span>\n</pre></div>\n</span>",
+          "mimetype": "application/vnd.marimo+traceback"
+        }
+      ]
+    },
+    {
+      "id": "Hbol",
+      "code_hash": "293811ddfffbcfecad424c4bf470a88b",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": [
+        {
+          "type": "stream",
+          "name": "stdout",
+          "text": "<gb_io.Record object at 0x1109a01f0>\n",
+          "mimetype": "text/plain"
+        }
+      ]
+    }
+  ]
+}

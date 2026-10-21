@@ -44,8 +44,21 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
+      - name: Configure uv to install serogen from GitHub
+        run: |
+          python3 -c '
+          from pathlib import Path
+          p = Path("pyproject.toml")
+          p.write_text(
+              p.read_text().replace(
+                  "serogen = { path = \"../SeroGen\", editable = true }",
+                  "serogen = { git = \"https://github.com/seroverse/serogen.git\" }",
+              )
+          )
+          '
+
       - name: Install documentation dependencies
-        run: uv sync --frozen --python 3.14 --group docs
+        run: uv sync --python 3.14 --group docs
 
       - name: Export Marimo slide decks from cached session snapshots
         run: |
