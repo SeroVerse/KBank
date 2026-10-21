@@ -74,8 +74,9 @@ flowchart LR
 
     ```python
     from kbank.biosynthesis.predictor import GlycanPredictor
-    from kbank.db import GlycanRecords
-    from serogen import GenomeAssembly, LocusPredictor
+    from kbank.db.records import GlycanRecords
+    from serogen.core.io.fasta import GenomeAssembly
+    from serogen.loci.predictor import LocusPredictor
 
     # Load curated bacterial glycan-locus reference database
     records = GlycanRecords.load()
@@ -93,7 +94,8 @@ flowchart LR
 === "CSDB & IUPAC Glycan Graph Parsing"
 
     ```python
-    from kbank import CSDBParser, IUPACParser
+    from kbank.io.csdb import CSDBParser
+    from kbank.io.iupac import IUPACParser
 
     csdb_parser = CSDBParser()
     glycan = csdb_parser.parse("-3)[bDGlcpA(1-2)aLRhap(1-3)]aDGalp(1-")
@@ -104,13 +106,13 @@ flowchart LR
 === "Bipartite Gene-to-Glycan Alignment"
 
     ```python
-    from kbank import BiosyntheticAligner
-    from kbank.db import GlycanRecords
+    from kbank.biosynthesis.align import BiosyntheticAssigner
+    from kbank.db.records import GlycanRecords
 
     records = GlycanRecords.load()
-    aligner = BiosyntheticAligner.from_records(records)
+    assigner = BiosyntheticAssigner()
 
     # Align a biosynthetic gene cluster to its paired glycan structure
     record = records[0]
-    assignment = aligner.align(record.locus, record.glycan)
+    assignment = assigner.assign_record(record.glycan, record.locus)
     ```

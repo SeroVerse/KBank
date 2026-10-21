@@ -104,6 +104,11 @@ jobs:
               print(f"Exported {out_dir / nb_path.stem}.html ({len(html):,} bytes)")
           '
 
+      - name: Fetch latest announcement from SeroVerse/.github
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: uv run --no-sync python scripts/fetch_announcement.py
+
       - name: Build documentation with Zensical
         run: uv run --no-sync zensical build --clean --strict
 

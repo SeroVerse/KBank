@@ -2,12 +2,6 @@
 
 The **KBank** API is organized into three main areas:
 
-- **[`kbank.glycan` & `kbank.sugars`](glycan.md)** — CSR directed polysaccharide graphs (`Glycan`, `Glycans`), monosaccharide and substituent chemical registries (`Sugars`), and stereochemical enumerations (`Anomer`, `Chirality`, `LinkageType`, `ResidueType`).
-- **[`kbank.db` & `kbank.io`](db.md)** — Curated bacterial glycan–locus records (`GlycanRecord`, `GlycanRecords`) and structural parsers (`CSDBParser`, `IUPACParser`).
-- **[`kbank.biosynthesis`](biosynthesis.md)** — Bipartite enzyme-to-linkage alignment (`BiosyntheticAligner`, `GeneGlycanAligner`), factorized 1D-CNN enzyme classifiers (`BiosyntheticClassifierSuite`), and neuro-symbolic MPNN *de novo* structure prediction (`GlycanPredictor`).
-
----
-
-::: kbank
-    options:
-      members: false
+- **[`kbank.glycan` & `kbank.sugars`](glycan.md)** — CSR directed polysaccharide graphs ([`Glycan`][kbank.glycan.Glycan], [`Glycans`][kbank.glycan.Glycans]), monosaccharide and substituent chemical registries ([`Sugars`][kbank.sugars.Sugars]), and stereochemical enumerations ([`Anomer`][kbank.glycan.Anomer], [`Chirality`][kbank.glycan.Chirality], [`LinkageType`][kbank.glycan.LinkageType], [`ResidueType`][kbank.glycan.ResidueType]).
+- **[`kbank.db` & `kbank.io`](db.md)** — Curated bacterial glycan–locus records ([`GlycanRecord`][kbank.db.models.GlycanRecord], [`GlycanRecords`][kbank.db.records.GlycanRecords]), multi-database curation ([`build_curated_glycan_records`][kbank.db.curation.build_curated_glycan_records]), and structural parsers ([`CSDBParser`][kbank.io.csdb.CSDBParser], [`IUPACParser`][kbank.io.iupac.IUPACParser], [`KEGGParser`][kbank.io.kegg.KEGGParser]).
+- **[`kbank.biosynthesis`](biosynthesis.md)** — Bipartite enzyme-to-linkage alignment ([`BiosyntheticAssigner`][kbank.biosynthesis.align.BiosyntheticAssigner], [`PanGraphConsensusPrior`][kbank.biosynthesis.align.PanGraphConsensusPrior]), factorized 1D-CNN enzyme classifiers ([`BiosyntheticClassifierSuite`][kbank.biosynthesis.classifier.BiosyntheticClassifierSuite]), and neuro-symbolic MPNN *de novo* structure prediction ([`GlycanPredictor`][kbank.biosynthesis.predictor.GlycanPredictor]).

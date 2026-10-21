@@ -10,7 +10,7 @@ import numpy as np
 from scipy.sparse import csr_array, diags
 from scipy.stats import wasserstein_distance_nd
 from serogen.core.collections import BatchedContainer
-from serogen.core.graph import TAG_EDGE, BitField, DirectedEdge, GraphBatch, GraphModel, IntNode
+from serogen.core.graph.models import TAG_EDGE, BitField, DirectedEdge, GraphBatch, GraphModel, IntNode
 
 from kbank.sugars import Sugars
 

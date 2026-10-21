@@ -15,8 +15,9 @@ from typing import TYPE_CHECKING, Any, Self
 
 import numpy as np
 from serogen.core.seq.seq import Sequences
-from serogen.genes import GeneRole, GeneRoleClassifier
-from serogen.loci import Loci, Locus
+from serogen.genes.cnn import GeneRoleClassifier
+from serogen.genes.roles import GeneRole
+from serogen.loci.models import Loci, Locus
 
 from kbank.biosynthesis.align import AssignmentEvidence, TargetType, _edge_signatures
 from kbank.glycan import Anomer, Chirality, Glycan, LinkageType, ResidueType

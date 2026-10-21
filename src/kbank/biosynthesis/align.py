@@ -14,18 +14,18 @@ from typing import Any, Self, overload
 
 import numpy as np
 from serogen.core.collections import RaggedArrayContainer
-from serogen.core.graph import (
-    TAG_EDGE,
+from serogen.core.graph.align import (
     Alignment,
     AlignmentConfig,
     CostStrategy,
     EmbeddingStrategy,
     GraphAligner,
-    GraphModel,
     WeisfeilerLehmanEmbedding,
 )
-from serogen.genes import GeneRole
-from serogen.loci import ArchetypeCategory, GeneNode, Loci, Locus, LocusArchetype
+from serogen.core.graph.models import TAG_EDGE, GraphModel
+from serogen.genes.roles import GeneRole
+from serogen.loci.archetypes import ArchetypeCategory, LocusArchetype
+from serogen.loci.models import GeneNode, Loci, Locus
 
 from kbank.glycan import Anomer, Chirality, Glycan, LinkageEdge, LinkageType, ResidueType
 from kbank.sugars import Sugars

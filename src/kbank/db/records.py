@@ -9,9 +9,11 @@ from typing import Any, Self, overload
 import numpy as np
 from serogen.core.collections import BatchedContainer
 from serogen.core.interval import Intervals
-from serogen.core.seq import GeneticCode, Sequences
+from serogen.core.seq.alphabet import GeneticCode
+from serogen.core.seq.seq import Sequences
 from serogen.genes.models import Genes, Indels
-from serogen.loci import Loci, Locus, LocusArchetype
+from serogen.loci.archetypes import LocusArchetype
+from serogen.loci.models import Loci, Locus
 
 from kbank.biosynthesis.align import BiosyntheticAssigner, GeneGlycanAssignments, PanGraphConsensusPrior
 from kbank.db.models import GlycanRecord

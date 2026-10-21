@@ -7,7 +7,8 @@ biosynthetic gene clusters (`Locus`, `LocusArchetype`) from `serogen`.
 
 from dataclasses import dataclass
 
-from serogen.loci import Locus, LocusArchetype
+from serogen.loci.archetypes import LocusArchetype
+from serogen.loci.models import Locus
 
 from kbank.biosynthesis.align import GeneGlycanAssignment
 from kbank.glycan import Glycan

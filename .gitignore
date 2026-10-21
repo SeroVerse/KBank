@@ -221,6 +221,8 @@ __marimo__/
 
 notebooks/
 scripts/
+!scripts/fetch_announcement.py
+docs/overrides/announcement.html
 data/
 tests/
 src/kbank/app/

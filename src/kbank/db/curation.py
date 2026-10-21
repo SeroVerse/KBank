@@ -15,9 +15,11 @@ from typing import Any
 
 import numpy as np
 from serogen.core.genome import GenomeAssembly
-from serogen.loci import ArchetypeCategory, Loci, Locus, LocusArchetype, LocusPredictor
+from serogen.loci.archetypes import ArchetypeCategory, LocusArchetype
+from serogen.loci.models import Loci, Locus
+from serogen.loci.predictor import LocusPredictor
 
-from kbank.biosynthesis import BiosyntheticAssigner
+from kbank.biosynthesis.align import BiosyntheticAssigner
 from kbank.db.models import GlycanRecord
 from kbank.db.records import GlycanRecords, _loci_from_npz_dict, _loci_to_npz_dict
 from kbank.glycan import Glycan
@@ -483,8 +485,8 @@ async def resolve_and_predict_loci(
     import httpx
 
     t_stage0 = time.perf_counter()
-    batch_predictor = LocusPredictor(whole_genome=False, min_completeness=0.65, stitch_contig_splits=False)
-    whole_genome_predictor = LocusPredictor(whole_genome=True, min_completeness=0.75)
+    batch_predictor = LocusPredictor(min_completeness=0.65, stitch_contig_splits=False)
+    whole_genome_predictor = LocusPredictor(min_completeness=0.75)
     word_split_re = re.compile(r"[A-Za-z0-9]+(?::[A-Za-z0-9]+)?")
     num_sero_re = re.compile(
         r"(?:serotype|serogroup|type|capsule|b-band|osa|iats)\s+O?([0-9]{1,3}[A-Za-z]?)\b",
