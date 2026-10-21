@@ -2,8 +2,8 @@ import re
 import warnings
 
 from kbank.glycan import Anomer, Chirality, Glycan, LinkageEdge, LinkageType, ResidueType
+from kbank.io.base import GlycanParseError, GlycanParser, GlycanParseWarning, Substitution, TokenType
 from kbank.sugars import Sugars
-from kbank.io.base import GlycanParser, Substitution, GlycanParseError, TokenType
 
 
 class CSDBParser(GlycanParser):
@@ -77,6 +77,26 @@ class CSDBParser(GlycanParser):
         acceptor = _parse_c(link[-1])
         return donor, (acceptor,)
 
+    def __init__(self) -> None:
+        super().__init__()
+        self._oac_idx: int = self.mod_map[b"OAc"]
+        self._neu_idx: int = self.mono_map[b"Neu"]
+        self._neu5ac_idx: int = self.mono_map[b"Neu5Ac"]
+        self._n_acetyl_map: dict[int, int] = {
+            self.mono_map[b"GlcN"]: self.mono_map[b"GlcNAc"],
+            self.mono_map[b"GalN"]: self.mono_map[b"GalNAc"],
+            self.mono_map[b"ManN"]: self.mono_map[b"ManNAc"],
+            self.mono_map[b"GulN"]: self.mono_map[b"GulNAc"],
+            self.mono_map[b"AltN"]: self.mono_map[b"AltNAc"],
+            self.mono_map[b"AllN"]: self.mono_map[b"AllNAc"],
+            self.mono_map[b"TalN"]: self.mono_map[b"TalNAc"],
+            self.mono_map[b"IdoN"]: self.mono_map[b"IdoNAc"],
+            self.mono_map[b"FucN"]: self.mono_map[b"FucNAc"],
+            self.mono_map[b"QuiN"]: self.mono_map[b"QuiNAc"],
+            self.mono_map[b"RhaN"]: self.mono_map[b"RhaNAc"],
+            self.mono_map[b"Mur"]: self.mono_map[b"MurNAc"],
+        }
+
     def _parse_monosaccharide(self, node: bytes, strict: bool = False) -> tuple[
         Anomer, ResidueType | None, list[Substitution]]:
         if node.startswith(b"*"):
@@ -84,6 +104,12 @@ class CSDBParser(GlycanParser):
         if node.startswith(b"-"):
             node = node.lstrip(b"-")
         subs = []
+        if node.endswith(b"ol") and not node.endswith(b"Col"):
+            subs.append(Substitution(self.mod_map[b"ol"]))
+            node = node[:-3] if node.endswith(b"-ol") else node[:-2]
+            if not node or node.strip(b"ab?DxXRSldrs ") == b"":
+                return Anomer.UNKNOWN, None, subs
+
         mod_match = self._RE_MOD_SEARCH.search(node)
         is_false_mod = False
         if mod_match:
@@ -91,11 +117,20 @@ class CSDBParser(GlycanParser):
             prefix = node[:mod_match.start()]
             if mod_str == b"N":
                 is_false_mod = True
-            elif mod_str in (b"Ac", b"OAc") and (b"Aci" in node or b"Leg" in node or b"Pse" in node or b"Bac" in node):
+            elif mod_str in (b"Ac", b"OAc") and (
+                b"Aci" in node
+                or b"Leg" in node
+                or b"Pse" in node
+                or b"Bac" in node
+                or b"Neu5Ac" in node
+                or prefix.endswith(b"N")
+            ):
                 is_false_mod = True
             elif mod_str == b"Gro" and len(prefix) <= 2:
                 is_false_mod = True
-            elif mod_str == b"ol" and (b"-ol" in node or b"ol" in node[len(prefix) - 2:]):
+            elif mod_str == b"P" and node[mod_match.start() :].startswith((b"Par", b"Pse")):
+                is_false_mod = True
+            elif mod_str == b"ol":
                 is_false_mod = True
 
         if mod_match and not is_false_mod:
@@ -132,8 +167,26 @@ class CSDBParser(GlycanParser):
 
         # 2. Chirality prefix (D, L, l, d, X, x, R, S, r, s, and possible trailing ?)
         chi_chars = (b'D'[0], b'L'[0], b'l'[0], b'd'[0], b'?'[0], b'x'[0], b'X'[0], b'R'[0], b'S'[0], b'r'[0], b's'[0])
-        if idx < len(node) and node[idx] in chi_chars and not (
-                node[idx] in (b'R'[0], b'r'[0]) and node[idx:].lower().startswith((b"rib", b"rha"))):
+        protected_sugar_prefixes = (
+            b"rib",
+            b"rha",
+            b"rul",
+            b"xyl",
+            b"xul",
+            b"lyx",
+            b"sor",
+            b"sia",
+            b"sug",
+            b"sub",
+            b"dig",
+            b"dha",
+            b"ddhex",
+            b"dhex",
+            b"ldmanhep",
+            b"ddmanhep",
+            b"dmanhep",
+        )
+        if idx < len(node) and node[idx] in chi_chars and not node[idx:].lower().startswith(protected_sugar_prefixes):
             first_chi = node[idx]
             if first_chi in (b'D'[0], b'd'[0]):
                 chirality = Chirality.D
@@ -157,12 +210,11 @@ class CSDBParser(GlycanParser):
         core_sugar_clean = core_sugar.rstrip(b"?")
 
         # Handle 'N' modifier properly so it doesn't break 'Neu'
-        if core_sugar.startswith(b"Neu"):
+        mono_match = self._RE_MONO.match(core_sugar)
+        if not mono_match and core_sugar_clean != core_sugar:
+            mono_match = self._RE_MONO.match(core_sugar_clean)
+        if not mono_match and core_sugar.startswith(b"Neu"):
             mono_match = self._RE_NEU.match(core_sugar)
-        else:
-            mono_match = self._RE_MONO.match(core_sugar)
-            if not mono_match and core_sugar_clean != core_sugar:
-                mono_match = self._RE_MONO.match(core_sugar_clean)
 
         if not mono_match:
             if strict:
@@ -183,7 +235,8 @@ class CSDBParser(GlycanParser):
         if chirality == Chirality.UNKNOWN:
             chirality = Chirality(Sugars.natural_chirality[sugar_idx])
 
-        return anomer, ResidueType.from_sugar(sugar_idx, chirality, core_sugar.endswith(b'f')), subs
+        is_fur = core_sugar.endswith(b"f") or b"fN" in core_sugar
+        return anomer, ResidueType.from_sugar(sugar_idx, chirality, is_fur), subs
 
     def parse(self, sequence: bytes, strict: bool = False) -> Glycan:
         if not isinstance(sequence, (bytes, bytearray)):
@@ -216,12 +269,39 @@ class CSDBParser(GlycanParser):
                     if active_node_id is not None:
                         mod_carbons = pending_acceptors if pending_acceptors else (0,)
                         for sub in subs:
-                            mod_node_id = len(monosaccharides)
-                            monosaccharides.append(ResidueType.from_sugar(sub.modifier, Chirality.UNKNOWN, False))
-                            for carbon in mod_carbons:
-                                edges.append(LinkageEdge(source=mod_node_id, target=active_node_id,
-                                                         edge_type=LinkageType(Anomer.UNKNOWN, pending_donor or 0,
-                                                                               carbon)))
+                            rem_carbons = list(mod_carbons)
+                            if sub.modifier == self._oac_idx:
+                                active_res = monosaccharides[active_node_id]
+                                active_s = active_res.sugar
+                                if active_s in self._n_acetyl_map and (2 in rem_carbons or 0 in rem_carbons):
+                                    monosaccharides[active_node_id] = ResidueType.from_sugar(
+                                        self._n_acetyl_map[active_s],
+                                        active_res.chirality,
+                                        active_res.is_furanose,
+                                        active_res.is_reducing_end,
+                                    )
+                                    if 2 in rem_carbons:
+                                        rem_carbons.remove(2)
+                                    else:
+                                        rem_carbons.remove(0)
+                                elif active_s == self._neu_idx and (5 in rem_carbons or 0 in rem_carbons):
+                                    monosaccharides[active_node_id] = ResidueType.from_sugar(
+                                        self._neu5ac_idx,
+                                        active_res.chirality,
+                                        active_res.is_furanose,
+                                        active_res.is_reducing_end,
+                                    )
+                                    if 5 in rem_carbons:
+                                        rem_carbons.remove(5)
+                                    else:
+                                        rem_carbons.remove(0)
+                            if rem_carbons:
+                                mod_node_id = len(monosaccharides)
+                                monosaccharides.append(ResidueType.from_sugar(sub.modifier, Chirality.UNKNOWN, False))
+                                for carbon in rem_carbons:
+                                    edges.append(LinkageEdge(source=mod_node_id, target=active_node_id,
+                                                             edge_type=LinkageType(Anomer.UNKNOWN, pending_donor or 0,
+                                                                                   carbon)))
                         pending_donor = None
                         pending_acceptors = None
                 else:

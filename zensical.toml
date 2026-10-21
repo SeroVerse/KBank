@@ -1,0 +1,174 @@
+[project]
+site_url = "https://seroverse.github.io/KBank/"
+site_name = "KBank"
+site_description = "Neuro-symbolic bacterial glycan database, biosynthetic gene-to-glycan aligner, and de novo structure predictor"
+site_author = "Tom Stanton"
+copyright = "Copyright &copy; 2026 Tom Stanton — SeroVerse"
+
+repo_url = "https://github.com/SeroVerse/KBank"
+repo_name = "SeroVerse/KBank"
+edit_uri = "edit/main/docs/"
+
+nav = [
+  { "Overview" = [
+    { "Home" = "index.md" },
+    { "Architecture & Algorithms" = "architecture.md" },
+  ] },
+  { "Benchmarks & Notebooks" = [
+    { "Overview" = "notebooks/index.md" },
+  ] },
+  { "API Reference" = [
+    { "Overview" = "reference/index.md" },
+    { "kbank.glycan & sugars" = "reference/glycan.md" },
+    { "kbank.db & io" = "reference/db.md" },
+    { "kbank.biosynthesis" = "reference/biosynthesis.md" },
+  ] },
+]
+
+extra_css = ["stylesheets/extra.css"]
+
+[project.theme]
+custom_dir = "docs/overrides"
+language = "en"
+features = [
+  "announce.dismiss",
+  "content.action.edit",
+  "content.action.view",
+  "content.code.annotate",
+  "content.code.copy",
+  "content.code.select",
+  "content.footnote.tooltips",
+  "content.tabs.link",
+  "content.tooltips",
+  "navigation.footer",
+  "navigation.indexes",
+  "navigation.instant",
+  "navigation.instant.prefetch",
+  "navigation.instant.progress",
+  "navigation.path",
+  "navigation.sections",
+  "navigation.tabs",
+  "navigation.tabs.sticky",
+  "navigation.top",
+  "navigation.tracking",
+  "search.highlight",
+  "toc.follow",
+]
+
+[project.theme.icon]
+logo = "lucide/hexagon"
+repo = "fontawesome/brands/github"
+
+[project.theme.font]
+text = "Inter"
+code = "JetBrains Mono"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme)"
+toggle.icon = "lucide/sun-moon"
+toggle.name = "Switch to light mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+primary = "green"
+accent = "amber"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+primary = "green"
+accent = "amber"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to system preference"
+
+[[project.extra.social]]
+icon = "fontawesome/brands/github"
+link = "https://github.com/SeroVerse/KBank"
+name = "SeroVerse/KBank on GitHub"
+
+[project.plugins.search]
+enabled = true
+
+[project.plugins.autorefs]
+enabled = true
+
+[project.plugins.gh-admonitions]
+enabled = true
+
+[project.plugins.glightbox]
+enabled = true
+
+[project.plugins.llmstxt]
+enabled = true
+markdown_description = "KBank: Neuro-symbolic bacterial glycan database, CSDB/IUPAC chemical graph engine, bipartite enzyme-to-linkage aligner, and Relational MPNN de novo polysaccharide structure predictor."
+full_output = "llms-full.txt"
+
+[project.plugins.llmstxt.sections]
+"Overview & Architecture" = [
+  { "index.md" = "Getting started, quickstart, and geno-glycomic capabilities" },
+  { "architecture.md" = "SoA CSR glycan graphs, bipartite gene-to-glycan alignment, and Relational MPNN arborescence prediction" },
+]
+"Benchmarks & Notebooks" = [
+  { "notebooks/index.md" = "Curated bacterial glycan dataset, cluster classifier, and MPNN structure prediction benchmarks" },
+]
+"API Reference" = [
+  { "reference/glycan.md" = "kbank.glycan and kbank.sugars: CSR glycan graphs, monosaccharide registry, and stereochemistry" },
+  { "reference/db.md" = "kbank.db and kbank.io: Curated glycan-locus records and CSDB/IUPAC/KEGG parsers" },
+  { "reference/biosynthesis.md" = "kbank.biosynthesis: BiosyntheticAligner, BiosyntheticClassifierSuite, and GlycanPredictor" },
+]
+
+[project.plugins.mkdocstrings]
+enabled = true
+default_handler = "python"
+
+[project.plugins.mkdocstrings.handlers.python]
+paths = ["src", "../SeroGen/src"]
+
+[project.plugins.mkdocstrings.handlers.python.options]
+docstring_style = "google"
+show_source = true
+show_root_heading = true
+show_root_full_path = false
+show_symbol_type_heading = true
+show_symbol_type_toc = true
+separate_signature = true
+show_signature_annotations = true
+signature_crossrefs = true
+members_order = "source"
+group_by_category = true
+summary = true
+inherited_members = false
+filters = ["!^_"]
+
+[project.markdown_extensions]
+abbr = {}
+admonition = {}
+attr_list = {}
+def_list = {}
+footnotes = {}
+md_in_html = {}
+toc.permalink = true
+pymdownx.arithmatex.generic = true
+pymdownx.betterem = {}
+pymdownx.caret = {}
+pymdownx.details = {}
+pymdownx.emoji.emoji_generator = "zensical.extensions.emoji.to_svg"
+pymdownx.emoji.emoji_index = "zensical.extensions.emoji.twemoji"
+pymdownx.highlight.anchor_linenums = true
+pymdownx.highlight.line_spans = "__span"
+pymdownx.highlight.pygments_lang_class = true
+pymdownx.inlinehilite = {}
+pymdownx.keys = {}
+pymdownx.magiclink = {}
+pymdownx.mark = {}
+pymdownx.smartsymbols = {}
+pymdownx.superfences.custom_fences = [
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
+]
+pymdownx.tabbed.alternate_style = true
+pymdownx.tabbed.combine_header_slug = true
+pymdownx.tasklist.custom_checkbox = true
+pymdownx.tilde = {}
