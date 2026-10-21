@@ -16,9 +16,7 @@
   <script>document.documentElement.setAttribute("data-sv-pillar", "{{ sv_pillar }}");</script>
 {% endblock %}
 
-{% block announce %}
-  {% include "announcement.html" ignore missing %}
-{% endblock %}
+{%- block announce -%}{%- include "announcement.html" ignore missing -%}{%- endblock -%}
 
 {% block header %}
   <nav class="sv-ecosystem-bar" aria-label="SeroVerse Ecosystem Navigation">

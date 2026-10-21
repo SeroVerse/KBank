@@ -1,11 +1,11 @@
 [project]
-site_url = "https://seroverse.github.io/KBank/"
+site_url = "https://seroverse.github.io/kbank/"
 site_name = "KBank"
 site_description = "Neuro-symbolic bacterial glycan database, biosynthetic gene-to-glycan aligner, and de novo structure predictor"
 site_author = "Tom Stanton"
 copyright = "Copyright &copy; 2026 Tom Stanton — SeroVerse"
 
-repo_url = "https://github.com/SeroVerse/KBank"
+repo_url = "https://github.com/seroverse/kbank"
 repo_name = "SeroVerse/KBank"
 edit_uri = "edit/main/docs/"
 
@@ -16,6 +16,9 @@ nav = [
   ] },
   { "Benchmarks & Notebooks" = [
     { "Overview" = "notebooks/index.md" },
+    { "Glycan & Locus Curation" = "notebooks/curate-glycans.md" },
+    { "10-Head Cluster Classifiers" = "notebooks/cluster-classifier.md" },
+    { "MPNN Glycan Predictor" = "notebooks/glycan-predictor.md" },
   ] },
   { "API Reference" = [
     { "Overview" = "reference/index.md" },
@@ -86,7 +89,7 @@ toggle.name = "Switch to system preference"
 
 [[project.extra.social]]
 icon = "fontawesome/brands/github"
-link = "https://github.com/SeroVerse/KBank"
+link = "https://github.com/seroverse/kbank"
 name = "SeroVerse/KBank on GitHub"
 
 [project.plugins.search]
@@ -112,7 +115,10 @@ full_output = "llms-full.txt"
   { "architecture.md" = "SoA CSR glycan graphs, bipartite gene-to-glycan alignment, and Relational MPNN arborescence prediction" },
 ]
 "Benchmarks & Notebooks" = [
-  { "notebooks/index.md" = "Curated bacterial glycan dataset, cluster classifier, and MPNN structure prediction benchmarks" },
+  { "notebooks/index.md" = "Interactive Marimo benchmark notebooks and 16:9 slide decks" },
+  { "notebooks/curate-glycans.md" = "Multi-database bacterial surface glycan curation and de novo SeroGen locus pairing" },
+  { "notebooks/cluster-classifier.md" = "10-head 1D-CNN BiosyntheticClassifierSuite EM self-training and cross-validation" },
+  { "notebooks/glycan-predictor.md" = "Two-phase Optuna TPE tuning and validation of RelationalMPNN and GlycanPredictor" },
 ]
 "API Reference" = [
   { "reference/glycan.md" = "kbank.glycan and kbank.sugars: CSR glycan graphs, monosaccharide registry, and stereochemistry" },

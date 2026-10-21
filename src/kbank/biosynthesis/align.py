@@ -423,6 +423,7 @@ class PanGraphConsensusPrior:
         self.pan_locus_edge_counts: dict[tuple[int, int], int] = {}
         self.pan_glycan_node_counts: dict[int, int] = {}
         self.pan_glycan_bigram_counts: dict[tuple[tuple[int, ...], tuple[int, ...]], int] = {}
+        self.modifier_cluster_spec: dict[int, dict[tuple[int, int, int], float]] = {}
         self.fine_to_med: dict[int, int] = {}
         self.rescued_loci: list[Locus] = []
         self.classifier_suite: Any | None = None
@@ -796,6 +797,15 @@ class PanGraphConsensusPrior:
         helper = assigner if assigner is not None else BiosyntheticAssigner()
         init_sugar_acc: dict[int, Counter[int]] = defaultdict(Counter)
         prec_sugar_acc: dict[int, dict[int, float]] = defaultdict(lambda: defaultdict(float))
+        mod_spec_acc: dict[int, dict[tuple[int, int, int], float]] = defaultdict(lambda: defaultdict(float))
+        mod_roles_set = {
+            GeneRole.ACETYLTRANSFERASE,
+            GeneRole.PYRUVYLTRANSFERASE,
+            GeneRole.METHYLTRANSFERASE,
+            GeneRole.PHOSPHOTRANSFERASE,
+            GeneRole.FORMYLTRANSFERASE,
+            GeneRole.ALANINE_TRANSFERASE,
+        }
 
         raw_locus_list = [loci_batch[i] for i in range(n)]
         for i in range(n):
@@ -810,6 +820,30 @@ class PanGraphConsensusPrior:
                     mc = prior.fine_to_med.get(cid, 0)
                     if mc > 0:
                         cluster_rec_sets[mc].add(i)
+
+            n_ac_mods, _ = helper._find_n_acetyl_nodes(gly)
+            for g_node in loc.nodes:
+                if g_node.role in mod_roles_set and g_node.cluster_id > 0:
+                    cid = int(g_node.cluster_id)
+                    m_targets = helper.registry.get_rule(g_node.role).target_modifiers
+                    for e_mod in gly.edges:
+                        if 0 <= e_mod.source < len(gly.nodes) and 0 <= e_mod.target < len(gly.nodes):
+                            s_m = gly.nodes[e_mod.source]
+                            t_m = gly.nodes[e_mod.target]
+                            if (
+                                s_m.is_modifier
+                                and e_mod.source not in n_ac_mods
+                                and s_m.sugar in m_targets
+                                and not t_m.is_modifier
+                            ):
+                                m_key = (
+                                    int(s_m.sugar),
+                                    int(t_m.sugar),
+                                    int(e_mod.edge_type.chemical_int),
+                                )
+                                for t_cid in (cid, prior.fine_to_med.get(cid, 0)):
+                                    if t_cid > 0:
+                                        mod_spec_acc[t_cid][m_key] += 1.0
 
             core_sugars = {nd.sugar for nd in gly.nodes if not nd.is_modifier}
             for g_node in loc.nodes:
@@ -842,6 +876,7 @@ class PanGraphConsensusPrior:
         prior.cluster_record_counts = {c: len(recs) for c, recs in cluster_rec_sets.items()}
         prior.init_cluster_sugar = {c: dict(cnts) for c, cnts in init_sugar_acc.items()}
         prior.precursor_cluster_sugar = {c: dict(cnts) for c, cnts in prec_sugar_acc.items()}
+        prior.modifier_cluster_spec = {c: dict(cnts) for c, cnts in mod_spec_acc.items()}
 
         rotated_glycans: list[Glycan] = []
         locus_list: list[Locus] = []
@@ -1210,6 +1245,31 @@ class BiosyntheticCostStrategy(CostStrategy):
             for rank_idx, idx_g in enumerate(ordered_gts):
                 gt_order_norm[idx_g] = (float(rank_idx) / float(n_gts - 1)) if n_gts > 1 else 0.5
 
+        # Defer duplicate consecutive processive repeat edges from 1-to-1 Hungarian matching when intra_gt_edges > n_gts
+        deferred_processive_cols: set[int] = set()
+        if glycan_graph is not None and gt_gene_indices:
+            intra_core_edges = [
+                k
+                for k, e in enumerate(glycan_graph.edges)
+                if (n_res + k) not in modifier_edge_indices
+                and ((n_res + k) != wzy_bipartite_idx or not has_polymerase_in_locus)
+            ]
+            excess_edges = len(intra_core_edges) - len(gt_gene_indices)
+            if excess_edges > 0:
+                for k1 in intra_core_edges:
+                    if excess_edges <= 0:
+                        break
+                    e1 = glycan_graph.edges[k1]
+                    sig1 = _edge_signatures(glycan_graph, k1)[0][:7]
+                    for k2 in intra_core_edges:
+                        if k1 == k2 or (n_res + k1) in deferred_processive_cols or (n_res + k2) in deferred_processive_cols:
+                            continue
+                        e2 = glycan_graph.edges[k2]
+                        if e1.source == e2.target and _edge_signatures(glycan_graph, k2)[0][:7] == sig1:
+                            deferred_processive_cols.add(n_res + k2)
+                            excess_edges -= 1
+                            break
+
         core_sugars_in_glycan: set[int] = (
             {nd.sugar for nd in glycan_graph.nodes if not nd.is_modifier}
             if glycan_graph is not None
@@ -1287,6 +1347,8 @@ class BiosyntheticCostStrategy(CostStrategy):
                             cost[i, j] = float(np.clip(base_wzy, 0.003, 0.85))
                         else:
                             # Intra-unit GT (or synthase)
+                            if j in deferred_processive_cols:
+                                continue
                             if (
                                 gn.role == GeneRole.GLYCOSYLTRANSFERASE
                                 and wzy_bipartite_idx is not None
@@ -1951,6 +2013,7 @@ class BiosyntheticAssigner:
         self,
         glycan: Glycan,
         locus: Locus | None,
+        pan_prior: PanGraphConsensusPrior | None = None,
     ) -> tuple[Glycan, tuple[bytes, ...], dict[int, int]]:
         """Artificially complete `glycan` with modifier nodes inferred from excess modifier genes in `locus`.
 
@@ -2005,13 +2068,42 @@ class BiosyntheticAssigner:
             mod_sugar_idx = Sugars.name_to_index[mod_bytes]
             for g_idx in excess_genes:
                 best_u = self._select_modifier_acceptor(new_nodes, new_edges, role, mod_bytes)
+                mod_edge_type = LinkageType(Anomer.UNKNOWN, donor=0, acceptor=0)
+                cid_mod = int(locus.nodes[g_idx].cluster_id)
+                if pan_prior is not None and cid_mod > 0:
+                    spec_map = pan_prior.modifier_cluster_spec.get(cid_mod) or pan_prior.modifier_cluster_spec.get(
+                        pan_prior.fine_to_med.get(cid_mod, 0), {}
+                    )
+                    if spec_map:
+                        occupied_on: dict[int, set[int]] = {u_i: set() for u_i in core_indices}
+                        for e_ex in new_edges:
+                            if e_ex.target in occupied_on and e_ex.edge_type.acceptor > 0:
+                                occupied_on[e_ex.target].add(int(e_ex.edge_type.acceptor))
+                        for (m_sug, acc_sug, lnk_int), _w_m in sorted(
+                            spec_map.items(), key=lambda kv: kv[1], reverse=True
+                        ):
+                            if m_sug != mod_sugar_idx:
+                                continue
+                            cand_lt = LinkageType(int(lnk_int)).with_topology(is_backbone=False, is_polymer=False)
+                            matching_u = [
+                                u_i
+                                for u_i in core_indices
+                                if int(new_nodes[u_i].sugar) == acc_sug
+                                and (cand_lt.acceptor == 0 or int(cand_lt.acceptor) not in occupied_on.get(u_i, set()))
+                            ]
+                            if not matching_u:
+                                matching_u = [u_i for u_i in core_indices if int(new_nodes[u_i].sugar) == acc_sug]
+                            if matching_u:
+                                best_u = matching_u[0]
+                                mod_edge_type = cand_lt
+                                break
                 new_mod_idx = len(new_nodes)
                 new_nodes.append(ResidueType.from_sugar(mod_sugar_idx, Chirality.UNKNOWN, False))
                 new_edges.append(
                     LinkageEdge(
                         source=new_mod_idx,
                         target=best_u,
-                        edge_type=LinkageType(Anomer.UNKNOWN, donor=0, acceptor=0),
+                        edge_type=mod_edge_type,
                     )
                 )
                 completed_names.append(mod_bytes)
@@ -2533,7 +2625,11 @@ class BiosyntheticAssigner:
                                 or glycan.edges[edge_p].source == e_u.target
                             )
                         )
-                        c_val = float(c_mat[g_c, b_u]) if np.isfinite(c_mat[g_c, b_u]) else 1.0
+                        c_val = (
+                            float(c_mat[g_c, b_u])
+                            if np.isfinite(c_mat[g_c, b_u])
+                            else (float(c_mat[g_c, b_p]) if (has_p and np.isfinite(c_mat[g_c, b_p])) else 1.0)
+                        )
                         bp_len = int(gene_lengths[g_c]) if g_c < len(gene_lengths) else 1000
                         return (unmatched_g, same_dl, same_da, -round(c_val, 3), is_adj, bp_len)
 

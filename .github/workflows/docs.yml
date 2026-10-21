@@ -1,0 +1,130 @@
+name: Documentation
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+    paths:
+      - "docs/**"
+      - "scripts/**"
+      - "src/**"
+      - "zensical.toml"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".python-version"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Build Zensical Site
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          python-version: "3.14"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install documentation dependencies
+        run: uv sync --frozen --python 3.14 --group docs
+
+      - name: Export Marimo slide decks from cached session snapshots
+        run: |
+          uv run --no-sync python -c '
+          import json
+          from pathlib import Path
+          from marimo._config.manager import get_default_config_manager
+          from marimo._export.exporter import Exporter
+          from marimo._export.file import _resolve_and_inline_layout
+          from marimo._export.requests import HTMLExportRequest
+          from marimo._schemas.export_options import HTMLExportOptions, NotebookExportSnapshot
+          from marimo._session.notebook import load_notebook
+          from marimo._session.state.serialize import serialize_notebook
+          from marimo._session.state.session_view import SessionView
+          from marimo._utils.code import hash_code
+
+          out_dir = Path("docs/notebooks/assets")
+          out_dir.mkdir(parents=True, exist_ok=True)
+          exporter = Exporter()
+          for nb_path in sorted(Path("scripts").glob("*.py")):
+              session_path = Path("scripts/__marimo__/session") / f"{nb_path.name}.json"
+              if not session_path.exists():
+                  continue
+              file_manager = load_notebook(str(nb_path.resolve()))
+              session_data = json.loads(session_path.read_text(encoding="utf-8"))
+              cell_datas = list(file_manager.app.cell_manager.cell_data())
+              session_cells = session_data.get("cells", [])
+              for idx, cd in enumerate(cell_datas):
+                  if idx < len(session_cells):
+                      session_cells[idx]["id"] = cd.cell_id
+                      session_cells[idx]["code_hash"] = hash_code(cd.code)
+              session_view = SessionView()
+              for cd in cell_datas:
+                  session_view.last_executed_code[cd.cell_id] = cd.code
+              layout = _resolve_and_inline_layout(file_manager.app)
+              config = get_default_config_manager(current_path=file_manager.path)
+              resolved = config.get_config()
+              snapshot = NotebookExportSnapshot(
+                  notebook=serialize_notebook(session_view, file_manager.app.cell_manager),
+                  session=session_data,
+                  model_notifications=(),
+              )
+              html, _ = exporter.export_as_html(
+                  HTMLExportRequest(
+                      filename=file_manager.filename,
+                      app_code=file_manager.app.to_py(),
+                      app_config=file_manager.app.config,
+                      snapshot=snapshot,
+                      display_config=resolved["display"],
+                      options=HTMLExportOptions(include_code=True, files=()),
+                      layout=layout,
+                      sharing_config=resolved.get("sharing"),
+                  )
+              )
+              (out_dir / f"{nb_path.stem}.html").write_text(html, encoding="utf-8")
+              print(f"Exported {out_dir / nb_path.stem}.html ({len(html):,} bytes)")
+          '
+
+      - name: Build documentation with Zensical
+        run: uv run --no-sync zensical build --clean --strict
+
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

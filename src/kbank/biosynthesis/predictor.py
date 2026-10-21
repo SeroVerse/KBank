@@ -76,8 +76,6 @@ HOUSEKEEPING_SUGARS: frozenset[int] = frozenset(
         b"GlcNAc",
         b"GalNAc",
         b"Man",
-        b"GlcA",
-        b"GalA",
         b"ManNAc",
         b"Rib",
         b"GlcN",
@@ -568,10 +566,11 @@ class GlycanPredictor:
                                 )
 
                 init_cid_rec = 0
+                n_ac_mods_rec, _ = assigner._find_n_acetyl_nodes(gly)
                 for a in assigns:
                     if not a.is_aligned or a.gene_index < 0 or a.gene_index >= len(loc.nodes):
                         continue
-                    if a.score < 0.70 and a.evidence != AssignmentEvidence.PAN_GRAPH_CONSENSUS:
+                    if a.score < 0.60 and a.evidence != AssignmentEvidence.PAN_GRAPH_CONSENSUS:
                         continue
                     c_id = int(loc.nodes[a.gene_index].cluster_id)
                     if c_id <= 0:
@@ -584,6 +583,32 @@ class GlycanPredictor:
                     elif a.role in precursor_roles and a.residue is not None and not a.residue.is_modifier:
                         s_map = pan_prior.precursor_cluster_sugar.setdefault(c_id, {})
                         s_map[int(a.residue.sugar)] = s_map.get(int(a.residue.sugar), 0.0) + w_a
+                    elif (
+                        a.role
+                        in (
+                            GeneRole.ACETYLTRANSFERASE,
+                            GeneRole.PYRUVYLTRANSFERASE,
+                            GeneRole.METHYLTRANSFERASE,
+                            GeneRole.PHOSPHOTRANSFERASE,
+                            GeneRole.FORMYLTRANSFERASE,
+                            GeneRole.ALANINE_TRANSFERASE,
+                        )
+                        and a.residue is not None
+                        and a.residue.is_modifier
+                        and 0 <= a.bipartite_glycan_index < len(gly.nodes)
+                        and a.bipartite_glycan_index not in n_ac_mods_rec
+                    ):
+                        for e_m in gly.edges:
+                            if e_m.source == a.bipartite_glycan_index and 0 <= e_m.target < len(gly.nodes):
+                                t_res_m = gly.nodes[e_m.target]
+                                if not t_res_m.is_modifier:
+                                    m_key = (
+                                        int(a.residue.sugar),
+                                        int(t_res_m.sugar),
+                                        int(e_m.edge_type.chemical_int),
+                                    )
+                                    m_spec = pan_prior.modifier_cluster_spec.setdefault(c_id, {})
+                                    m_spec[m_key] = m_spec.get(m_key, 0.0) + w_a
                     elif (
                         a.role
                         in (
@@ -695,7 +720,7 @@ class GlycanPredictor:
             for a in assigns:
                 if not a.is_aligned or a.gene_index < 0 or a.gene_index >= len(translations):
                     continue
-                if a.score < 0.72 and a.evidence != AssignmentEvidence.PAN_GRAPH_CONSENSUS:
+                if a.score < 0.62 and a.evidence != AssignmentEvidence.PAN_GRAPH_CONSENSUS:
                     continue
                 aa = bytes(translations[a.gene_index].seq)
                 if len(aa) < 70:
@@ -1664,7 +1689,19 @@ class GlycanPredictor:
                 and not clamped_mask[slot_i]
                 and cid > 0
                 and cid in self.multi_edge_clusters
-                and n_gts <= 2
+                and (
+                    n_gts <= 2
+                    or (
+                        n_gts <= 3
+                        and len(
+                            {
+                                (int(r_m.sugar), int(l_m.chemical_int))
+                                for r_m, l_m in self.multi_edge_clusters[cid]
+                            }
+                        )
+                        == 1
+                    )
+                )
             ):
                 multi_sigs = self.multi_edge_clusters[cid]
                 if len(multi_sigs) >= 2:
@@ -1972,6 +2009,13 @@ class GlycanPredictor:
                         state_combos.append(
                             (_score_combo(base_choices, flipped_bb), r_res, r_prob, r_ev, list(base_choices), flipped_bb)
                         )
+                # Short-backbone + long-branch topology when Wzy specifically closes onto slot s_i's sugar
+                if not slot.is_clamped and len(gt_slots) >= 3 and sum(base_bb) >= 2:
+                    one_bb = [1 if idx_b == s_i else 0 for idx_b in range(len(gt_slots))]
+                    if one_bb != base_bb:
+                        state_combos.append(
+                            (_score_combo(base_choices, one_bb), r_res, r_prob, r_ev, list(base_choices), one_bb)
+                        )
 
         state_combos.sort(key=lambda item: item[0], reverse=True)
         raw_candidates: list[tuple[Glycan, float, tuple[GeneGlycanAssignment, ...]]] = list(fp_candidates)
@@ -2110,6 +2154,7 @@ class GlycanPredictor:
                         s_uw += w_mpnn_e * mpnn_parent_logits[w]
 
                     # 1b. Direct PanGraphConsensusPrior joint (donor, linkage, acceptor_sugar) match for slot_u
+                    has_exact_pan_acc_uw = False
                     for c_tier, tier_scale in (
                         (slot_u.cluster_id, 1.0),
                         (self.pan_prior.fine_to_med.get(slot_u.cluster_id, 0), 0.72),
@@ -2133,12 +2178,13 @@ class GlycanPredictor:
                                         exact_acc_w += cnt_u
                             if exact_dl_w > 0:
                                 if exact_acc_w > 0:
+                                    has_exact_pan_acc_uw = True
                                     s_uw += self.params.w_pan_acc_match * tier_scale * (exact_acc_w / max(1e-6, tot_u))
                                 else:
                                     s_uw -= (0.49 * self.params.w_pan_acc_match) * tier_scale
 
                     # 1c. Terminal leaf / branch-point constraint on parent w
-                    if w > 0:
+                    if w > 0 and not has_exact_pan_acc_uw:
                         slot_w = gt_slots[w - 1]
                         if bb_flags[w] == 0:
                             # Side-chain branch residue w rarely accepts further extensions
@@ -2331,7 +2377,9 @@ class GlycanPredictor:
 
                 # Attach modifier substituents from tailing modifier ORFs
                 gly_core = Glycan.from_topology(nodes=nodes_list, edges=edges_list)
-                comp_gly, _, comp_map = self.assigner.complete_glycan_modifiers(gly_core, rescued_locus)
+                comp_gly, _, comp_map = self.assigner.complete_glycan_modifiers(
+                    gly_core, rescued_locus, pan_prior=self.pan_prior
+                )
                 if comp_map:
                     gly_final = Glycan.from_topology(nodes=comp_gly.nodes, edges=comp_gly.edges)
                     mod_assigns = list(assigns_list)
@@ -2339,7 +2387,10 @@ class GlycanPredictor:
                     for mod_node_idx, mod_gene_idx in sorted(comp_map.items()):
                         mod_res = gly_final.nodes[mod_node_idx]
                         m_role = rescued_locus.nodes[mod_gene_idx].role
-                        if m_role in (
+                        has_specific_mod_edge = any(
+                            e_m.source == mod_node_idx and e_m.edge_type.acceptor > 0 for e_m in gly_final.edges
+                        )
+                        if has_specific_mod_edge or m_role in (
                             GeneRole.PYRUVYLTRANSFERASE,
                             GeneRole.FORMYLTRANSFERASE,
                             GeneRole.ALANINE_TRANSFERASE,

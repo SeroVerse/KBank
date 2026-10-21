@@ -36,12 +36,15 @@ docs = [
     "zensical",
     "mkdocstrings[python]",
     "zenzic>=0.30.0; python_version < '3.14'",
+    "marimo>=0.25.1",
 ]
 test = [
-    "pytest",
+    "pytest>=8.0.0",
     "pytest-testmon>=2.1.0",
+    "pytest-xdist",
     "pytest-cov>=7.1.0",
-    "cassetter>=0.14.0",
+    "cassetter>=0.1.0",
+    "httpx2[http2]>=2.13.0",
 ]
 typing = [
     "ty",
@@ -51,7 +54,6 @@ lint = [
     "pre-commit"
 ]
 dev = [
-    "marimo>=0.25.1",
     { include-group = "docs" },
     { include-group = "test" },
     { include-group = "typing" },
@@ -59,12 +61,11 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://SeroVerse.github.io/KBank/"
-Repository = "https://github.com/SeroVerse/KBank"
-Documentation = "https://SeroVerse.github.io/KBank/"
-"Bug Tracker" = "https://github.com/SeroVerse/KBank/issues"
-Changelog = "https://github.com/SeroVerse/KBank/blob/master/CHANGELOG.md"
-
+Homepage = "https://seroverse.github.io/kbank/"
+Repository = "https://github.com/seroverse/kbank"
+Documentation = "https://seroverse.github.io/kbank/"
+"Bug Tracker" = "https://github.com/seroverse/kbank/issues"
+Changelog = "https://github.com/seroverse/kbank/blob/master/CHANGELOG.md"
 
 [build-system]
 build-backend = "hatchling.build"
@@ -106,13 +107,12 @@ possibly-unresolved-reference = "warn"
 [tool.uv.sources]
 serogen = { path = "../SeroGen", editable = true }
 
-
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]
 norecursedirs = [".venv", "dist", "build", ".agy", ".git", ".ruff_cache"]
 # Token-saving flags: suppress header/summary noise, truncate tracebacks, silence passing output
-addopts = "-q --tb=short --show-capture=no --cov=src --cov-report=term-missing --cov-branch"
+addopts = "-q --tb=short --show-capture=no --cov=src --cov-report=term-missing --cov-branch -n auto"
 markers = [
     "max_span_ms(span_name, max_duration_ms): Assert span duration budget.",
 ]

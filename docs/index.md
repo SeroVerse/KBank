@@ -2,9 +2,7 @@
 
 <div class="sv-hero" markdown>
 
-<div class="sv-hero-eyebrow">
-  :lucide-hexagon: SeroVerse · Geno-Glycomic Engine
-</div>
+<div class="sv-hero-eyebrow" markdown="span">:lucide-hexagon: SeroVerse · Geno-Glycomic Engine</div>
 
 # KBank
 
@@ -13,10 +11,10 @@
 Built on Structure-of-Arrays (SoA) Compressed Sparse Row (CSR) chemical graphs and Numba-accelerated message-passing kernels, **KBank** bridges [`SeroGen`](https://seroverse.github.io/SeroGen/) biosynthetic gene cluster predictions directly to chemical polysaccharide structures (`CSDB` / `IUPAC` / RDKit `Mol`).
 
 <div class="sv-badges">
-  <img src="https://img.shields.io/badge/python-3.14%2B-10b981?logo=python&logoColor=white" alt="Python 3.14+" />
-  <img src="https://img.shields.io/badge/records-1%2C514%20Glycan--Locus%20Pairs-059669" alt="1,514 Curated Records" />
-  <img src="https://img.shields.io/badge/engine-MPNN%20%2B%20Arborescence-d97706" alt="Relational MPNN" />
-  <img src="https://img.shields.io/badge/license-GPLv3-6366f1" alt="GPLv3 License" />
+  <img class="off-glb" src="https://img.shields.io/badge/python-3.14%2B-10b981?logo=python&logoColor=white" alt="Python 3.14+" />
+  <img class="off-glb" src="https://img.shields.io/badge/records-1%2C514%20Glycan--Locus%20Pairs-059669" alt="1,514 Curated Records" />
+  <img class="off-glb" src="https://img.shields.io/badge/engine-MPNN%20%2B%20Arborescence-d97706" alt="Relational MPNN" />
+  <img class="off-glb" src="https://img.shields.io/badge/license-GPLv3-6366f1" alt="GPLv3 License" />
 </div>
 
 </div>

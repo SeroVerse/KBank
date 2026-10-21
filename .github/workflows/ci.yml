@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  FORCE_COLOR: "1"
+  UV_CACHE_DIR: /tmp/.uv-cache
+  NUMBA_CACHE_DIR: ${{ github.workspace }}/.numba_cache
+
+jobs:
+  quality:
+    name: Lint & Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          python-version: "3.14"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install Python 3.14 & dependencies
+        run: uv sync --frozen --python 3.14 --group lint --group typing
+
+      - name: Run Ruff linter
+        run: uv run --no-sync ruff check --output-format=github .
+
+      - name: Check Ruff formatting
+        run: uv run --no-sync ruff format --check .
+
+      - name: Run ty static type checker
+        run: uv run --no-sync ty check src/
+
+  test:
+    name: Test (${{ matrix.os }}, py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.14"]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Restore Numba JIT cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.NUMBA_CACHE_DIR }}
+          key: numba-jit-${{ runner.os }}-py${{ matrix.python-version }}-${{ hashFiles('src/**/*.py') }}
+          restore-keys: |
+            numba-jit-${{ runner.os }}-py${{ matrix.python-version }}-
+
+      - name: Install Python ${{ matrix.python-version }} & test dependencies
+        run: uv sync --frozen --python ${{ matrix.python-version }} --group test
+
+      - name: Run pytest suite with coverage
+        run: |
+          uv run --no-sync pytest \
+            -o addopts="-ra --tb=short --cov=src/kbank --cov-report=term-missing --cov-report=xml --junitxml=pytest-report.xml"
+
+      - name: Publish test summary
+        if: always()
+        run: |
+          echo "### 🧪 Test Suite Results (${{ matrix.os }} / Python ${{ matrix.python-version }})" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Runner**: \`${{ runner.os }} (${{ runner.arch }})\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Numba Cache**: \`${{ env.NUMBA_CACHE_DIR }}\`" >> $GITHUB_STEP_SUMMARY
