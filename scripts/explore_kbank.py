@@ -146,31 +146,32 @@ def _(
         "INITIATOR": "#dc2626",  # Red — Und-PP-sugar initiating transferase
         "GLYCOSYLTRANSFERASE": "#2563eb",  # Royal Blue — Core/branch glycosyltransferases
         "POLYMERASE": "#d97706",  # Amber — Wzy repeating-unit polymerase
-        "FLPASE": "#059669",  # Emerald — Wzx lipid-linked repeat flippase
-        "POLYSACCHARIDE_COPOLYMERASE": "#0d9488",  # Teal — Wzz / Wzc chain-length regulator
-        "OUTER_MEMBRANE_TRANSLOCON": "#0891b2",  # Cyan — Wza outer-membrane translocon
-        "EXPORT_TRANSMEMBRANE": "#0284c7",  # Sky — Wzm / export channel
-        "ABC_TRANSPORTER_PERMEASE": "#0284c7",  # Sky — Wzm ABC permease
-        "ABC_TRANSPORTER_ATP": "#4f46e5",  # Indigo — Wzt ABC ATPase
+        "FLIPPASE": "#059669",  # Emerald — Wzx lipid-linked repeat flippase
+        "COPOLYMERASE": "#0d9488",  # Teal — Wzz chain-length regulator
+        "TRANSLOCON": "#0891b2",  # Cyan — Wza outer-membrane translocon
+        "CAPSULE_ANCHOR": "#0284c7",  # Sky — Wzi / Wzg capsule anchor
+        "ABC_PERMEASE": "#0284c7",  # Sky — Wzm ABC permease
+        "ABC_ATPASE": "#4f46e5",  # Indigo — Wzt ABC ATPase
         "TRANSMEMBRANE_SYNTHASE": "#7c3aed",  # Violet — HasA / Kps processive synthase
-        "TYROSINE_KINASE": "#14b8a6",  # Teal — Wzb / Wzc kinase/phosphatase
+        "LIGASE": "#b45309",  # Dark Amber — WaaL ligase
+        "KINASE": "#14b8a6",  # Teal — Wzc tyrosine autokinase
+        "PHOSPHATASE": "#2dd4bf",  # Light Teal — Wzb phosphatase
         "EPIMERASE": "#16a34a",  # Green — NDP-sugar epimerase (Gne, RmlC)
         "OXIDOREDUCTASE": "#15803d",  # Forest Green — Dehydrogenase / reductase (Ugd, RmlB, RmlD)
         "AMINOTRANSFERASE": "#65a30d",  # Lime — Sugar aminotransferase
         "NUCLEOTIDYLTRANSFERASE": "#047857",  # Dark Emerald — RmlA / GalU / ManC
         "ALDOLASE": "#22c55e",  # Light Green — NeuB / KdsA synthase
         "NUCLEOTIDASE": "#10b981",  # Emerald
-        "ISOMERASE": "#84cc16",  # Lime — ManA / KdsD isomerase
-        "MUTASE": "#4ade80",  # Mint — GlmM / ManB phosphomutase
         "ACETYLTRANSFERASE": "#ec4899",  # Pink — O-acetyltransferase (WbbJ, OatA)
         "PYRUVYLTRANSFERASE": "#db2777",  # Rose — Pyruvyltransferase (WcaK)
         "METHYLTRANSFERASE": "#a855f7",  # Purple — O-methyltransferase
         "PHOSPHOTRANSFERASE": "#e11d48",  # Crimson — Phosphotransferase / LicD
         "FORMYLTRANSFERASE": "#9333ea",  # Violet — Formyltransferase
         "ALANINE_TRANSFERASE": "#6366f1",  # Indigo — D-alanyl/aminoacyl transferase
-        "LYASE": "#f59e0b",  # Amber
-        "REGULATOR": "#64748b",  # Slate — Transcriptional regulator (RcsA, GalF)
+        "DEACETYLASE": "#f43f5e",  # Rose — Deacetylase
+        "GLYCOSYLHYDROLASE": "#f59e0b",  # Amber — Glycosylhydrolase / lyase
         "TRANSPOSASE": "#94a3b8",  # Light Slate — IS mobile element / transposase
+        "INTEGRASE": "#64748b",  # Slate — Integrase / recombinase
         "UNKNOWN": "#cbd5e1",  # Muted Gray — Unclassified ORF
     }
 
@@ -431,12 +432,29 @@ def _(
                     assign_by_gene.setdefault(int(a.gene_index), []).append(a)
 
             has_genes = len(locus.genes) == n
+            if has_genes and len(locus.genes.intervals.strands) == n:
+                strands_arr = locus.genes.intervals.strands
+            else:
+                strands_arr = np.ones(n, dtype=np.int8)
+                if int(locus.strand) < 0:
+                    strands_arr[0] = -1
+                for edge in locus.edges:
+                    u_e, v_e = int(edge.source), int(edge.target)
+                    if 0 <= u_e < n and 0 <= v_e < n and v_e == u_e + 1:
+                        orient = edge.edge_type.orientation
+                        if orient == IntergenicOrientation.CODIRECTIONAL:
+                            strands_arr[v_e] = strands_arr[u_e]
+                        elif orient == IntergenicOrientation.CONVERGENT:
+                            strands_arr[v_e] = -1
+                        elif orient == IntergenicOrientation.DIVERGENT:
+                            strands_arr[v_e] = 1
+
             node_rows: list[dict[str, Any]] = []
             for idx, g_node in enumerate(locus.nodes):
                 role_name = g_node.role.name or "UNKNOWN"
                 role_abbrev = g_node.role.abbreviation
                 cid = int(g_node.cluster_id)
-                strand_val = int(g_node.strand)
+                strand_val = int(strands_arr[idx])
                 if has_genes:
                     start_bp = int(locus.genes.intervals.starts[idx])
                     end_bp = int(locus.genes.intervals.ends[idx])
@@ -1598,7 +1616,9 @@ def _(
         n_nodes_g = len(r_obj.glycan.nodes) if r_obj.glycan is not None else 0
         n_edges_g = len(r_obj.glycan.edges) if r_obj.glycan is not None else 0
         n_orfs_l = len(r_obj.locus.nodes) if r_obj.locus is not None else 0
-        rxn_summary = ", ".join(str(a) for a in r_obj.assignments if a.is_aligned) if r_obj.assignments else "—"
+        rxn_summary = (
+            ", ".join(a.format_short() for a in r_obj.assignments if a.is_aligned) if r_obj.assignments else "—"
+        )
         table_rows.append(
             {
                 "Record ID": r_obj.compound_key.decode("utf-8", errors="replace"),

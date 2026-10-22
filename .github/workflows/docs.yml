@@ -95,6 +95,8 @@ jobs:
                               "marimo",
                               "export",
                               "html",
+                              "--no-sandbox",
+                              "--force",
                               str(nb_path),
                               "-o",
                               str(out_html),

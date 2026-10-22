@@ -1,0 +1,68 @@
+{
+  "version": "1",
+  "metadata": {
+    "marimo_version": "0.25.2",
+    "script_metadata_hash": "0c3a5d5e60e9978ac5f861c36de097a5"
+  },
+  "cells": [
+    {
+      "id": "Hbol",
+      "code_hash": "d41d11dbe86370ea2d0832ca93ff1ef9",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/html": "<pre class='text-xs'>DataTransformerRegistry.enable(&#x27;default&#x27;)</pre>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "MJUe",
+      "code_hash": "6be05f53fbc184f4574b999ae72a359a",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "vblA",
+      "code_hash": "bbf569b208efcc0d2d1de330a164aaa4",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": [
+        {
+          "type": "stream",
+          "name": "stderr",
+          "text": "/Users/tsta0015/.cache/uv/environments-v2/explore-kbank-2f724ab731eadf41/lib/python3.14/site-packages/marimo/_runtime/executor/executor.py:93: UserWarning: Automatically deduplicated selection parameter with identical configuration. If you want independent parameters, explicitly name them differently (e.g., name='param1', name='param2'). See https://github.com/vega/altair/issues/3891\n  exec(cell.body, glbls)\n",
+          "mimetype": "text/plain"
+        }
+      ]
+    },
+    {
+      "id": "bkHC",
+      "code_hash": "3be071188955e7ac1c1ebef4719b7eeb",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/html": "<marimo-callout-output data-html='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;text-error&#92;&quot;&#92;u003e&#92;u003cstrong&#92;u003eYour output is too large&#92;u003c/strong&#92;u003e&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&#92;n&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eYour output is too large for marimo to show. It has a size&#92;nof 11919910 bytes. Did you output this object by accident?&#92;u003c/span&#92;u003e&#92;n&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eIf this limitation is a problem for you, you can configure&#92;nthe max output size by adding (eg)&#92;u003c/span&#92;u003e&#92;n&#92;u003cdiv class=&#92;&quot;language-ini codehilite&#92;&quot;&#92;u003e&#92;u003cpre&#92;u003e&#92;u003cspan&#92;u003e&#92;u003c/span&#92;u003e&#92;u003ccode&#92;u003e&#92;u003cspan class=&#92;&quot;k&#92;&quot;&#92;u003e[tool.marimo.runtime]&#92;u003c/span&#92;u003e&#92;n&#92;u003cspan class=&#92;&quot;na&#92;&quot;&#92;u003eoutput_max_bytes&#92;u003c/span&#92;u003e&#92;u003cspan class=&#92;&quot;w&#92;&quot;&#92;u003e &#92;u003c/span&#92;u003e&#92;u003cspan class=&#92;&quot;o&#92;&quot;&#92;u003e=&#92;u003c/span&#92;u003e&#92;u003cspan class=&#92;&quot;w&#92;&quot;&#92;u003e &#92;u003c/span&#92;u003e&#92;u003cspan class=&#92;&quot;s&#92;&quot;&#92;u003e10_000_000&#92;u003c/span&#92;u003e&#92;n&#92;u003c/code&#92;u003e&#92;u003c/pre&#92;u003e&#92;u003c/div&#92;u003e&#92;n&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eto your pyproject.toml, or with the environment variable&#92;n&#92;u003ccode&#92;u003eMARIMO_OUTPUT_MAX_BYTES&#92;u003c/code&#92;u003e:&#92;u003c/span&#92;u003e&#92;n&#92;u003cdiv class=&#92;&quot;language-gdscript codehilite&#92;&quot;&#92;u003e&#92;u003cpre&#92;u003e&#92;u003cspan&#92;u003e&#92;u003c/span&#92;u003e&#92;u003ccode&#92;u003e&#92;u003cspan class=&#92;&quot;k&#92;&quot;&#92;u003eexport&#92;u003c/span&#92;u003e&#92;u003cspan class=&#92;&quot;w&#92;&quot;&#92;u003e &#92;u003c/span&#92;u003e&#92;u003cspan class=&#92;&quot;n&#92;&quot;&#92;u003eMARIMO_OUTPUT_MAX_BYTES&#92;u003c/span&#92;u003e&#92;u003cspan class=&#92;&quot;o&#92;&quot;&#92;u003e=&#92;u003c/span&#92;u003e&#92;u003cspan class=&#92;&quot;mi&#92;&quot;&#92;u003e10&#92;u003c/span&#92;u003e&#92;u003cspan class=&#92;&quot;n&#92;&quot;&#92;u003e_000_000&#92;u003c/span&#92;u003e&#92;n&#92;u003c/code&#92;u003e&#92;u003c/pre&#92;u003e&#92;u003c/div&#92;u003e&#92;n&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eIncreasing the max output size may cause performance issues.&#92;nIf you run into problems, please reach out&#92;nto us on &#92;u003ca href=&#92;&quot;https://marimo.io/discord?ref=app&#92;&quot; rel=&#92;&quot;noopener noreferrer&#92;&quot; target=&#92;&quot;_blank&#92;&quot;&#92;u003eDiscord&#92;u003c/a&#92;u003e or&#92;n&#92;u003ca href=&#92;&quot;https://github.com/marimo-team/marimo/issues&#92;&quot; rel=&#92;&quot;noopener noreferrer&#92;&quot; target=&#92;&quot;_blank&#92;&quot;&#92;u003eGitHub&#92;u003c/a&#92;u003e.&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-kind='&quot;warn&quot;'></marimo-callout-output>"
+          }
+        }
+      ],
+      "console": []
+    }
+  ]
+}
