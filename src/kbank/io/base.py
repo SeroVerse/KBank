@@ -1,22 +1,23 @@
+import re
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from dataclasses import dataclass
-from enum import Enum, StrEnum, auto
-import re
-import warnings
+from enum import Enum, auto
 
-from kbank.glycan import Anomer, Chirality, Glycan, LinkageEdge, LinkageType, ResidueType
+from kbank.glycan import Glycan
 from kbank.sugars import Sugars
 
 
 # Errors and warnings --------------------------------------------------------------------------------------------------
 class GlycanParseError(ValueError):
     """Raised when a glycan string violates structural syntax and cannot be parsed."""
+
     pass
 
 
 class GlycanParseWarning(UserWarning):
     """Raised when the parser employs heuristics or makes assumptions about an ambiguous structure."""
+
     pass
 
 
@@ -45,9 +46,9 @@ class Substitution:
 
 # Parsers --------------------------------------------------------------------------------------------------------------
 class GlycanParser(ABC):
-    _RE_LEXER = re.compile(br"\]|\[|\([^)]+\)|[^\[\]()]+")
+    _RE_LEXER = re.compile(rb"\]|\[|\([^)]+\)|[^\[\]()]+")
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.mono_map = dict(Sugars.name_to_index)
         for k, v in Sugars.alias_map.items():
             if v in self.mono_map:
@@ -71,13 +72,13 @@ class GlycanParser(ABC):
             b"Gro": self.mono_map[b"Gro"],
             b"ol": self.mono_map[b"ol"],
         }
-        
+
         mono_patterns = sorted(self.mono_map.keys(), key=len, reverse=True)
         mod_patterns = sorted(self.mod_map.keys(), key=len, reverse=True)
-        
-        self._RE_MOD = re.compile(br"^(" + b"|".join(mod_patterns) + br")")
-        self._RE_MOD_SEARCH = re.compile(br"(" + b"|".join(mod_patterns) + br")")
-        self._RE_MONO = re.compile(br"^(" + b"|".join(mono_patterns) + br")")
+
+        self._RE_MOD = re.compile(rb"^(" + b"|".join(mod_patterns) + rb")")
+        self._RE_MOD_SEARCH = re.compile(rb"(" + b"|".join(mod_patterns) + rb")")
+        self._RE_MONO = re.compile(rb"^(" + b"|".join(mono_patterns) + rb")")
 
     def _lex(self, seq: bytes) -> Iterator[Token]:
         tokens = []
@@ -98,6 +99,3 @@ class GlycanParser(ABC):
     def parse(self, sequence: bytes, strict: bool = False) -> Glycan:
         """Parse a canonical glycan sequence into a Glycan core model."""
         raise NotImplementedError
-
-
-

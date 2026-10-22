@@ -1,3 +1,17 @@
+---
+title: kbank.biosynthesis
+subtitle: BiosyntheticAssigner & GlycanPredictor
+description: "API reference for kbank.biosynthesis: BiosyntheticAssigner, PanGraphConsensusPrior, BiosyntheticClassifierSuite, and Relational MPNN GlycanPredictor."
+author: Tom Stanton
+icon: lucide/git-compare
+comments: true
+tags:
+  - api
+  - biosynthesis
+  - mpnn
+  - alignment
+---
+
 # `kbank.biosynthesis`
 
 Bipartite gene-to-glycan graph alignment, biochemical rules, factorized 1D-CNN classifiers, and Relational MPNN *de novo* structure prediction.
@@ -16,6 +30,6 @@ Bipartite gene-to-glycan graph alignment, biochemical rules, factorized 1D-CNN c
 
 ---
 
-## Neuro-Symbolic De Novo Structure Prediction (`kbank.biosynthesis.predictor`)
+## De Novo Structure Prediction (`kbank.biosynthesis.predictor`)
 
 ::: kbank.biosynthesis.predictor

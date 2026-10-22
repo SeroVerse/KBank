@@ -1,17 +1,13 @@
 # /// script
 # requires-python = ">=3.14"
 # dependencies = [
-#     "aiohttp>=3.14.3",
 #     "altair>=5.5.0",
 #     "cassetter>=0.14.0",
-#     "gb-io",
 #     "h2>=4.4.1",
-#     "httpx>=0.28.1",
 #     "httpx2>=2.13.0",
 #     "kbank",
 #     "marimo>=0.23.1",
 #     "numpy>=2.4.4",
-#     "pyarrow>=25.0.1",
 #     "scipy>=1.17.1",
 #     "serogen",
 # ]
@@ -36,16 +32,14 @@ app = marimo.App(
 @app.cell
 def _():
     import asyncio
-    from collections import Counter
-    import html
     import os
-    from pathlib import Path
     import time
+    from collections import Counter
 
     import altair as alt
-    from cassetter import Cassetter, RawRequest, RawResponse, SkipRecording
     import marimo as mo
     import numpy as np
+    from cassetter import Cassetter, RawRequest, RawResponse, SkipRecording
     from serogen.genes.roles import GeneRole
     from serogen.loci.archetypes import LocusArchetype
 
@@ -108,7 +102,6 @@ def _():
         IUPACParser,
         LinkageType,
         LocusArchetype,
-        Path,
         RECORDER,
         Sugars,
         alt,
@@ -119,7 +112,6 @@ def _():
         fetch_epsdb_records,
         fetch_glytoucan_records,
         fetch_kegg_glycan_records,
-        html,
         mo,
         normalize_raw_record_taxonomy,
         np,
@@ -142,7 +134,6 @@ async def _(
     IUPACParser,
     LinkageType,
     LocusArchetype,
-    Path,
     RECORDER,
     Sugars,
     alt,
@@ -153,7 +144,6 @@ async def _(
     fetch_epsdb_records,
     fetch_glytoucan_records,
     fetch_kegg_glycan_records,
-    html,
     normalize_raw_record_taxonomy,
     np,
     resolve_and_predict_loci,
@@ -161,7 +151,6 @@ async def _(
     time,
 ):
     t0 = time.perf_counter()
-    _repo_root = Path(__file__).resolve().parent.parent
     csdb_parser = CSDBParser()
     iupac_parser = IUPACParser()
 
@@ -176,14 +165,12 @@ async def _(
             iupac_parser,
             cache_path=DEFAULT_CSDB_CACHE_PATH,
         )
-        ecodab_records, ek3d_records, epsdb_records, kegg_records, canonical_to_gtc = (
-            await asyncio.gather(
-                fetch_ecodab_records(csdb_index, csdb_parser, iupac_parser, recorder=RECORDER),
-                fetch_ek3d_records(csdb_index, csdb_parser, iupac_parser, recorder=RECORDER),
-                fetch_epsdb_records(csdb_index, csdb_parser, iupac_parser, recorder=RECORDER),
-                fetch_kegg_glycan_records(recorder=RECORDER, allow_composition=False),
-                fetch_glytoucan_records(csdb_parser, iupac_parser, recorder=RECORDER),
-            )
+        ecodab_records, ek3d_records, epsdb_records, kegg_records, canonical_to_gtc = await asyncio.gather(
+            fetch_ecodab_records(csdb_index, csdb_parser, iupac_parser, recorder=RECORDER),
+            fetch_ek3d_records(csdb_index, csdb_parser, iupac_parser, recorder=RECORDER),
+            fetch_epsdb_records(csdb_index, csdb_parser, iupac_parser, recorder=RECORDER),
+            fetch_kegg_glycan_records(recorder=RECORDER, allow_composition=False),
+            fetch_glytoucan_records(csdb_parser, iupac_parser, recorder=RECORDER),
         )
         all_raw_records = normalize_raw_record_taxonomy(
             csdb_records + ecodab_records + ek3d_records + epsdb_records + kegg_records
@@ -207,7 +194,6 @@ async def _(
     curation_elapsed_s = time.perf_counter() - t0
 
     npz_path = glycan_records.save(DEFAULT_DB_PATH)
-    parquet_path = glycan_records.to_parquet(_repo_root / "data" / "kbank.parquet")
     _reloaded = GlycanRecords.load(npz_path)
     npz_parity = bool(
         len(_reloaded) == len(glycan_records)
@@ -216,12 +202,11 @@ async def _(
         and np.array_equal(_reloaded.loci.node_types, glycan_records.loci.node_types)
     )
     npz_kb = npz_path.stat().st_size / 1024.0
-    parquet_kb = parquet_path.stat().st_size / 1024.0
 
     # 1. Source Database x Antigen Class Stacked Bar Chart
     _src_ag_counts: Counter[tuple[str, str]] = Counter()
     _src_totals: Counter[str] = Counter()
-    for _db_b, _ag_b in zip(glycan_records.source_dbs, glycan_records.antigen_types):
+    for _db_b, _ag_b in zip(glycan_records.source_dbs, glycan_records.antigen_types, strict=False):
         _db_s = _db_b.decode("utf-8", errors="replace")
         _ag_s = _ag_b.decode("utf-8", errors="replace") or "Other"
         _src_ag_counts[(_db_s, _ag_s)] += 1
@@ -456,7 +441,7 @@ async def _(
     _role_aligned_counts: Counter[int] = Counter()
     _role_totals: Counter[int] = Counter()
     _target_names = ["NONE", "REDUCING_END", "LINKAGE", "MODIFIED_MONO", "MONOSACCHARIDE", "ANY"]
-    for _r_id, _t_id, _ev_id in zip(_assigns.roles, _assigns.target_types, _assigns.evidences):
+    for _r_id, _t_id, _ev_id in zip(_assigns.roles, _assigns.target_types, _assigns.evidences, strict=False):
         _r_int = int(_r_id)
         _t_str = _target_names[int(_t_id)] if 0 <= int(_t_id) < len(_target_names) else "ANY"
         _role_target_counts[(_r_int, _t_str)] += 1
@@ -558,8 +543,6 @@ async def _(
         npz_kb,
         npz_parity,
         npz_path,
-        parquet_kb,
-        parquet_path,
         roles_chart,
         source_chart,
         source_summary_rows,
@@ -579,7 +562,6 @@ def _(
     np,
     npz_kb,
     npz_parity,
-    parquet_kb,
 ):
     # Slide 1: Hero Title, Executive Summary & KPI Cards
     _n_total = len(glycan_records)
@@ -629,7 +611,7 @@ def _(
                     mo.stat(
                         label="Zero-Pickle SoA Archive",
                         value=f"{npz_kb:.1f} KB",
-                        caption=f"Parquet: {parquet_kb:.1f} KB | Parity: {'PASS' if npz_parity else 'FAIL'}",
+                        caption=f"src/kbank/data/glycans.npz | Parity: {'PASS' if npz_parity else 'FAIL'}",
                         bordered=True,
                     ),
                 ],
@@ -638,7 +620,7 @@ def _(
             ),
             mo.callout(
                 mo.md(
-                    f"**Exported Production Database (`src/kbank/data/glycans.npz` & `data/kbank.parquet`)**: "
+                    f"**Exported Production Database (`src/kbank/data/glycans.npz`)**: "
                     f"`{_n_total:,}` canonicalized repeat/oligosaccharide graphs paired with `{_n_loci:,}` segmented "
                     f"biosynthetic gene clusters (`allow_pickle=False`, round-trip bit parity: `{npz_parity}`)."
                 ),

@@ -1,15 +1,15 @@
 """Module for representing a glycan and glycan batches."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from enum import IntEnum, IntFlag
-from typing import Any, Self
+from typing import Any, Self, overload
 
 import numpy as np
 from scipy.sparse import csr_array, diags
 from scipy.stats import wasserstein_distance_nd
-from serogen.core.collections import BatchedContainer
 from serogen.core.graph.models import TAG_EDGE, BitField, DirectedEdge, GraphBatch, GraphModel, IntNode
 
 from kbank.sugars import Sugars
@@ -24,6 +24,7 @@ class Chirality(IntEnum):
 
 class Anomer(IntFlag):
     """Anomeric configuration of a glycosidic linkage."""
+
     UNKNOWN = 0
     ALPHA = 1
     BETA = 2
@@ -40,6 +41,7 @@ class ResidueType(IntNode):
     Bit 12: Main-chain backbone flag (1=Backbone, 0=Side-chain branch or modifier)
     Bit 31: Tag bit (0 = primary node, 1 = intermediate edge node)
     """
+
     SUGAR = BitField(shift=0, width=8)
     CHIRALITY = BitField(shift=8, width=2)
     FURANOSE = BitField(shift=10, width=1)
@@ -56,7 +58,7 @@ class ResidueType(IntNode):
         is_furanose: bool = False,
         is_reducing_end: bool = False,
         is_backbone: bool = False,
-    ):
+    ) -> Self:
         if isinstance(val_or_sugar, (int, np.integer)):
             return super().__new__(cls, int(val_or_sugar))
         sugar_idx = Sugars.index(val_or_sugar)
@@ -72,11 +74,12 @@ class ResidueType(IntNode):
     @classmethod
     def pack(
         cls,
-        sugar: int,
+        sugar: int = 0,
         chirality: int = 0,
-        is_furanose: bool = False,
-        is_reducing_end: bool = False,
-        is_backbone: bool = False,
+        is_furanose: bool | int = False,
+        is_reducing_end: bool | int = False,
+        is_backbone: bool | int = False,
+        **_kwargs: int,
     ) -> int:
         return (
             cls.SUGAR.pack(sugar)
@@ -176,7 +179,7 @@ class LinkageType(IntNode):
     POLYMER = BitField(shift=11, width=1)
     TAG_EDGE = BitField(shift=31, width=1)
 
-    OFFSET: int = TAG_EDGE
+    OFFSET: int = 1 << 31
     TOPOLOGY_MASK: int = int(BACKBONE.mask | POLYMER.mask)
     CHEMICAL_MASK: int = int(ANOMER.mask | DONOR.mask | ACCEPTOR.mask | TAG_EDGE.mask)
 
@@ -210,8 +213,9 @@ class LinkageType(IntNode):
         donor: int = 0,
         acceptor: int = 0,
         *,
-        is_backbone: bool = False,
-        is_polymer: bool = False,
+        is_backbone: bool | int = False,
+        is_polymer: bool | int = False,
+        **_kwargs: int,
     ) -> int:
         """Packs anomer, donor carbon, acceptor carbon, and topology flags into a 32-bit integer with TAG_EDGE set."""
         return (
@@ -224,7 +228,7 @@ class LinkageType(IntNode):
         )
 
     @classmethod
-    def from_bytes(cls, link: bytes | bytearray) -> Self:
+    def from_bytes(cls, link: bytes | bytearray) -> Self:  # ty: ignore[invalid-method-override]
         """Parses a linkage byte-string like b'b1-4', b'a1-3', b'1-4', b'?1-?' into a LinkageType."""
         clean = bytes(link).replace(b"->", b"-")
         if len(clean) == 3 and clean[1] == 45:  # e.g. b"1-4" -> b"?1-4"
@@ -287,11 +291,7 @@ class LinkageType(IntNode):
     def with_topology(self, *, is_backbone: bool = False, is_polymer: bool = False) -> LinkageType:
         """Return a copy of this `LinkageType` with updated `BACKBONE` and `POLYMER` bitflags."""
         cleared = int(self) & ~type(self).TOPOLOGY_MASK
-        packed = (
-            cleared
-            | type(self).BACKBONE.pack(int(is_backbone))
-            | type(self).POLYMER.pack(int(is_polymer))
-        )
+        packed = cleared | type(self).BACKBONE.pack(int(is_backbone)) | type(self).POLYMER.pack(int(is_polymer))
         return LinkageType(packed)
 
     @property
@@ -318,7 +318,6 @@ class LinkageType(IntNode):
         return f"Link({self.name.decode('ascii')})"
 
 
-
 @dataclass(slots=True, frozen=True)
 class LinkageEdge(DirectedEdge):
     source: int  # Parent / source index
@@ -339,9 +338,7 @@ def _residue_compatible(
     if not ignore_reducing_end and n_sub.is_reducing_end != n_sup.is_reducing_end:
         return False
     if n_sub.chirality != n_sup.chirality:
-        if not allow_wildcards or (
-            n_sub.chirality != Chirality.UNKNOWN and n_sup.chirality != Chirality.UNKNOWN
-        ):
+        if not allow_wildcards or (n_sub.chirality != Chirality.UNKNOWN and n_sup.chirality != Chirality.UNKNOWN):
             return False
     return True
 
@@ -357,11 +354,7 @@ def _linkage_compatible(
         return True
     if not allow_wildcards:
         return False
-    if (
-        l_sub.anomer != l_sup.anomer
-        and l_sub.anomer != Anomer.UNKNOWN
-        and l_sup.anomer != Anomer.UNKNOWN
-    ):
+    if l_sub.anomer != l_sup.anomer and l_sub.anomer != Anomer.UNKNOWN and l_sup.anomer != Anomer.UNKNOWN:
         return False
     if l_sub.donor != l_sup.donor and l_sub.donor != 0 and l_sup.donor != 0:
         return False
@@ -502,9 +495,7 @@ def _find_glycan_subgraph_mapping(
         for rl in req_links:
             matched = False
             for idx_a, al in enumerate(avail_links):
-                if idx_a not in used_idx and _linkage_compatible(
-                    rl, al, allow_wildcards=allow_wildcards
-                ):
+                if idx_a not in used_idx and _linkage_compatible(rl, al, allow_wildcards=allow_wildcards):
                     used_idx.add(idx_a)
                     matched = True
                     break
@@ -585,6 +576,7 @@ def _match_glycan_subgraph(
 @dataclass(slots=True, frozen=True)
 class Glycan(GraphModel):
     """Container for the components of a glycan."""
+
     canonical: bytes
     nodes: tuple[ResidueType, ...]
     edges: tuple[LinkageEdge, ...]
@@ -654,8 +646,7 @@ class Glycan(GraphModel):
                         backbone_nodes.add(i)
 
         new_nodes = tuple(
-            node.with_backbone((i in backbone_nodes) and not node.is_modifier)
-            for i, node in enumerate(self.nodes)
+            node.with_backbone((i in backbone_nodes) and not node.is_modifier) for i, node in enumerate(self.nodes)
         )
         new_edges = tuple(
             LinkageEdge(
@@ -705,9 +696,7 @@ class Glycan(GraphModel):
             return self
         if self.reducing_end_index == node_index and sum(1 for n in self.nodes if n.is_reducing_end) == 1:
             return self
-        new_nodes = tuple(
-            n.with_reducing_end(i == node_index).with_backbone(False) for i, n in enumerate(self.nodes)
-        )
+        new_nodes = tuple(n.with_reducing_end(i == node_index).with_backbone(False) for i, n in enumerate(self.nodes))
         new_edges = tuple(
             LinkageEdge(
                 source=e.source,
@@ -893,11 +882,7 @@ class Glycan(GraphModel):
                     is_main_cand = (
                         (top_cand[0] in on_wzy_path)
                         if on_wzy_path
-                        else (
-                            self.nodes[top_cand[0]].is_backbone
-                            or top_cand[1].is_backbone
-                            or len(candidates) == 1
-                        )
+                        else (self.nodes[top_cand[0]].is_backbone or top_cand[1].is_backbone or len(candidates) == 1)
                     )
                     if is_main_cand:
                         main_child = top_cand
@@ -922,10 +907,7 @@ class Glycan(GraphModel):
                 else b""
             )
             br_str = b"".join(
-                b"["
-                + _serialize_subtree(v_br, lt_br.anomer, is_main_chain=False)
-                + _format_link(lt_br)
-                + b"]"
+                b"[" + _serialize_subtree(v_br, lt_br.anomer, is_main_chain=False) + _format_link(lt_br) + b"]"
                 for v_br, lt_br in branch_children
             )
             mod_str = b"".join(_format_mod(m_src, m_lts) for m_src, m_lts in mods_by_target.get(u_idx, []))
@@ -1089,7 +1071,7 @@ class Glycan(GraphModel):
     @property
     def is_alditol(self) -> bool:
         """Returns True if the reducing end is an alditol (has an 'ol' modifier)."""
-        ol_idx = Sugars.name_to_index.get(b'ol', -1)
+        ol_idx = Sugars.name_to_index.get(b"ol", -1)
         for edge in self.edges:
             if edge.target == 0 and (self.nodes[edge.source] & 0xFF) == ol_idx:
                 return True
@@ -1127,11 +1109,7 @@ class Glycan(GraphModel):
         if not self.is_alditol:
             return self
         ol_idx = Sugars.name_to_index.get(b"ol", -1)
-        drop_nodes = {
-            e.source
-            for e in self.edges
-            if e.target == 0 and (self.nodes[e.source] & 0xFF) == ol_idx
-        }
+        drop_nodes = {e.source for e in self.edges if e.target == 0 and (self.nodes[e.source] & 0xFF) == ol_idx}
         if not drop_nodes:
             return self
         remap: dict[int, int] = {}
@@ -1354,15 +1332,10 @@ class Glycan(GraphModel):
         for m_idx, m_res in enumerate(donor.nodes):
             if not m_res.is_modifier or m_res.sugar == ol_idx:
                 continue
-            mod_edges = [
-                e for e in donor.edges if e.source == m_idx and not donor.nodes[e.target].is_modifier
-            ]
+            mod_edges = [e for e in donor.edges if e.source == m_idx and not donor.nodes[e.target].is_modifier]
             if not mod_edges:
                 continue
-            if not all(
-                e.target in donor_orig_to_core and donor_orig_to_core[e.target] in core_map
-                for e in mod_edges
-            ):
+            if not all(e.target in donor_orig_to_core and donor_orig_to_core[e.target] in core_map for e in mod_edges):
                 continue
 
             mapped_targets = [self_core_to_orig[core_map[donor_orig_to_core[e.target]]] for e in mod_edges]
@@ -1396,6 +1369,7 @@ class Glycans(GraphBatch[Glycan, "Glycans"]):
     """
     Structure-of-Arrays (SoA) batch container for glycan datasets.
     """
+
     node_types: np.ndarray[tuple[int], np.dtype[np.uint32]]
     node_offsets: np.ndarray[tuple[int], np.dtype[np.uint32]]
     edge_sources: np.ndarray[tuple[int], np.dtype[np.uint32]]
@@ -1406,11 +1380,7 @@ class Glycans(GraphBatch[Glycan, "Glycans"]):
 
     def __post_init__(self) -> None:
         if not isinstance(self.canonicals, np.ndarray):
-            arr = (
-                np.array(self.canonicals, dtype="S")
-                if len(self.canonicals) > 0
-                else np.empty(0, dtype="S1")
-            )
+            arr = np.array(self.canonicals, dtype="S") if len(self.canonicals) > 0 else np.empty(0, dtype="S1")
             object.__setattr__(self, "canonicals", arr)
 
     def __len__(self) -> int:
@@ -1504,7 +1474,20 @@ class Glycans(GraphBatch[Glycan, "Glycans"]):
             canonicals=np.array(canonicals, dtype="S"),
         )
 
-    def __getitem__(self, item: Any) -> Glycan | Self:
+    @overload
+    def __getitem__(self, item: int | np.integer[Any]) -> Glycan: ...
+
+    @overload
+    def __getitem__(self, item: slice | np.ndarray[tuple[int], Any] | list[Any]) -> Self: ...
+
+    @overload
+    def __getitem__(
+        self, item: int | np.integer[Any] | slice | np.ndarray[tuple[int], Any] | list[Any]
+    ) -> Glycan | Self: ...
+
+    def __getitem__(
+        self, item: int | np.integer[Any] | slice | np.ndarray[tuple[int], Any] | list[Any]
+    ) -> Glycan | Self:
         """
         Extracts a single Glycan by integer index, or a sub-batch by slice / boolean mask / integer index array.
         """
@@ -1514,17 +1497,18 @@ class Glycans(GraphBatch[Glycan, "Glycans"]):
                 idx += len(self)
             if idx < 0 or idx >= len(self):
                 raise IndexError("Glycans index out of range")
-                
+
             m_start, m_end = self.node_offsets[idx], self.node_offsets[idx + 1]
             e_start, e_end = self.edge_offsets[idx], self.edge_offsets[idx + 1]
-            
+
             nodes = tuple(ResidueType(x) for x in self.node_types[m_start:m_end])
             edges = tuple(
                 LinkageEdge(
                     source=int(self.edge_sources[i]) - int(m_start),
                     target=int(self.edge_targets[i]) - int(m_start),
-                    edge_type=LinkageType(self.edge_types[i])
-                ) for i in range(e_start, e_end)
+                    edge_type=LinkageType(self.edge_types[i]),
+                )
+                for i in range(e_start, e_end)
             )
             return Glycan(canonical=bytes(self.canonicals[idx]), nodes=nodes, edges=edges)
 
@@ -1549,7 +1533,9 @@ class Glycans(GraphBatch[Glycan, "Glycans"]):
             return self.empty()
 
         new_canonicals = self.canonicals[kept_indices]
-        new_nodes, new_node_offsets, new_sources, new_targets, new_types, new_edge_offsets = self._slice_soa_arrays(kept_indices)
+        new_nodes, new_node_offsets, new_sources, new_targets, new_types, new_edge_offsets = self._slice_soa_arrays(
+            kept_indices
+        )
         return self.__class__(
             node_types=new_nodes,
             node_offsets=new_node_offsets,
@@ -1567,14 +1553,14 @@ class Glycans(GraphBatch[Glycan, "Glycans"]):
         result = np.zeros(N, dtype=bool)
         if N == 0 or len(self.edge_types) == 0:
             return result
-            
-        ol_idx = Sugars.name_to_index.get(b'ol', -1)
+
+        ol_idx = Sugars.name_to_index.get(b"ol", -1)
         is_ol_node = (self.node_types & 0xFF) == ol_idx
-        
+
         glycan_indices = np.repeat(np.arange(N), np.diff(self.edge_offsets))
         global_sources = self.edge_sources
-        targets_root = (self.edge_targets == self.node_offsets[glycan_indices])
-        
+        targets_root = self.edge_targets == self.node_offsets[glycan_indices]
+
         valid_edges = targets_root & is_ol_node[global_sources]
         result[glycan_indices[valid_edges]] = True
         return result
@@ -1609,10 +1595,7 @@ class Glycans(GraphBatch[Glycan, "Glycans"]):
         adj_indices = np.concatenate([self.edge_sources, self.edge_targets])
         adj_indptr = np.concatenate([self.edge_targets, self.edge_sources])
 
-        adj = csr_array(
-            (np.ones_like(adj_indices), (adj_indices, adj_indptr)),
-            shape=(N, N)
-        )
+        adj = csr_array((np.ones_like(adj_indices), (adj_indices, adj_indptr)), shape=(N, N))
 
         deg = np.asarray(adj.sum(axis=1), dtype=np.float64).ravel()
         deg[deg == 0] = 1.0  # avoid div by zero

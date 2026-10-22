@@ -1,3 +1,16 @@
+---
+title: kbank.db & io
+subtitle: GlycanRecords & CSDB/IUPAC/KEGG Parsers
+description: "API reference for kbank.db and kbank.io: GlycanRecord, GlycanRecords, multi-database curation pipelines, and CSDB/IUPAC/KEGG structural parsers."
+author: Tom Stanton
+icon: lucide/database
+comments: true
+tags:
+  - api
+  - database
+  - parsers
+---
+
 # `kbank.db` & `kbank.io`
 
 Curated bacterial surface polysaccharide database records, multi-database curation pipelines, and `CSDB` / `IUPAC` / `KEGG` structural parsers.

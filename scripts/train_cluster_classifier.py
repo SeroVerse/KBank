@@ -29,16 +29,14 @@ app = marimo.App(
 
 @app.cell
 def _():
-    from collections import Counter
     import dataclasses
-    from pathlib import Path
     import time
+    from collections import Counter
+    from pathlib import Path
 
     import altair as alt
     import marimo as mo
     import numpy as np
-    from serogen.core.seq.seq import Sequences
-    from serogen.genes.cnn import GeneRoleClassifier
     from serogen.genes.roles import GeneRole
     from serogen.loci.archetypes import LocusArchetype
 
@@ -46,13 +44,11 @@ def _():
         AssignmentEvidence,
         BiosyntheticAssigner,
         GeneGlycanAssignments,
-        PanGraphConsensusPrior,
         TargetType,
     )
     from kbank.biosynthesis.classifier import (
         BiosyntheticClassifierSuite,
         ClusterClassifier,
-        encode_donor_residue_chem,
     )
     from kbank.biosynthesis.predictor import GlycanPredictor
     from kbank.db.records import GlycanRecords
@@ -68,18 +64,14 @@ def _():
         Counter,
         GeneGlycanAssignments,
         GeneRole,
-        GeneRoleClassifier,
         GlycanPredictor,
         GlycanRecords,
         LinkageType,
         LocusArchetype,
-        PanGraphConsensusPrior,
         Path,
-        Sequences,
         TargetType,
         alt,
         dataclasses,
-        encode_donor_residue_chem,
         mo,
         np,
         time,
@@ -95,17 +87,14 @@ def _(
     Counter,
     GeneGlycanAssignments,
     GeneRole,
-    GeneRoleClassifier,
     GlycanPredictor,
     GlycanRecords,
     LinkageType,
     LocusArchetype,
     Path,
-    Sequences,
     TargetType,
     alt,
     dataclasses,
-    encode_donor_residue_chem,
     np,
     time,
 ):
@@ -152,9 +141,7 @@ def _(
             _gt_a = [
                 a
                 for a in _old_a
-                if a.is_aligned
-                and a.role == GeneRole.GLYCOSYLTRANSFERASE
-                and a.target_type == TargetType.LINKAGE
+                if a.is_aligned and a.role == GeneRole.GLYCOSYLTRANSFERASE and a.target_type == TargetType.LINKAGE
             ]
             _is_locked_rec = bool(_gt_a) and all(
                 a.evidence == AssignmentEvidence.PAN_GRAPH_CONSENSUS and a.score >= 0.93 for a in _gt_a
@@ -229,12 +216,6 @@ def _(
                         kp_gt_pan += 1
     kp_mean_score = float(np.mean(kp_gt_scores)) if kp_gt_scores else 0.0
 
-    base_backbone = None
-    try:
-        base_backbone = GeneRoleClassifier.pretrained()
-    except Exception:
-        base_backbone = None
-
     cached_cv = {
         "donor_linkage": (0.3059, 0.4248),
         "donor": (0.4120, 0.6375),
@@ -249,10 +230,9 @@ def _(
     }
 
     cv_rows = []
-    n_folds = 5
-    for idx_t, target in enumerate(BiosyntheticClassifierSuite.SUITE_TARGETS):
+    for target in BiosyntheticClassifierSuite.SUITE_TARGETS:
         min_cnt = 4 if target in ("donor_linkage", "donor") else (3 if target == "linkage" else 2)
-        seqs, y_arr, w_arr, c_arr = ClusterClassifier.extract_training_data(
+        seqs, y_arr, _, c_arr = ClusterClassifier.extract_training_data(
             records,
             target=target,
             min_score=0.72,
@@ -268,20 +248,14 @@ def _(
         seqs_eval = [seqs[i] for i in np.where(in_full)[0]]
         y_eval = y_arr[in_full]
         c_eval = c_arr[in_full]
-        w_eval = w_arr[in_full]
 
         single_acc = full_clf.score(seqs_eval, y_eval)
         uniq_cids, c_probs = full_clf.predict_cluster_proba(seqs_eval, c_eval, pool="log_proba")
-        cid_to_pred = {
-            int(cid): int(full_clf.classes_[int(np.argmax(c_probs[k]))])
-            for k, cid in enumerate(uniq_cids)
-        }
+        cid_to_pred = {int(cid): int(full_clf.classes_[int(np.argmax(c_probs[k]))]) for k, cid in enumerate(uniq_cids)}
         single_preds = full_clf.predict(seqs_eval)
         pooled_preds = np.array(
             [
-                cid_to_pred[int(c)]
-                if int(c) > 0 and int(c) in cid_to_pred
-                else int(single_preds[idx_s])
+                cid_to_pred[int(c)] if int(c) > 0 and int(c) in cid_to_pred else int(single_preds[idx_s])
                 for idx_s, c in enumerate(c_eval)
             ],
             dtype=np.int64,
@@ -307,7 +281,7 @@ def _(
             ("CV_Top1", "5-Fold CV Top-1"),
             ("CV_Top3", "5-Fold CV Top-3"),
             ("Single_ORF_Acc", "Single-ORF Accuracy"),
-            ("Cluster_Pooled_Acc", "Cluster-Pooled (predict_proba_pooled)"),
+            ("Cluster_Pooled_Acc", "Cluster-Pooled (predict_cluster_proba)"),
         ):
             long_records.append(
                 {
@@ -413,10 +387,7 @@ def _(
         )
     )
 
-    mech_rows = [
-        {"Donor": d_s, "Mechanism": m_s, "Count": cnt}
-        for (d_s, m_s), cnt in mech_counts.items()
-    ]
+    mech_rows = [{"Donor": d_s, "Mechanism": m_s, "Count": cnt} for (d_s, m_s), cnt in mech_counts.items()]
     mech_chart = (
         alt.Chart(alt.Data(values=mech_rows))
         .mark_bar(cornerRadiusTopRight=3, cornerRadiusBottomRight=3)
@@ -532,7 +503,7 @@ def _(
                     f"**Saved Production Suite (`src/kbank/data/cluster_classifiers.npz`, `{suite_kb:.1f} KB`)**: "
                     f"10 factorized 1D-CNN heads (`donor_linkage`, `donor`, `linkage`, `acceptor_sugar`, `acceptor_motif`, "
                     f"`is_backbone`, `mechanism`, `initiator_sugar`, `wzy_linkage`, `modifier_linkage`) with "
-                    f"`predict_proba_pooled` homology-cluster aggregation."
+                    f"`predict_cluster_proba` homology-cluster aggregation."
                 ),
                 kind="success",
             ),
@@ -551,7 +522,7 @@ def _(acc_chart, alt, mo, pool_gain_chart):
                 """
                 ## 1. 10-Head 1D-CNN Cross-Validation & Homology-Cluster Pooling
                 Comparing 5-fold sequence-stratified cross-validation (`Top-1` and `Top-3`) against single-ORF and
-                MCL homology-cluster log-probability pooling (`predict_proba_pooled`).
+                MCL homology-cluster log-probability pooling (`predict_cluster_proba`).
                 """
             ),
             alt.hconcat(acc_chart, pool_gain_chart).resolve_scale(color="independent"),

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from serogen.genes.roles import GeneRole
 from serogen.loci.archetypes import LocusArchetype
 from serogen.loci.models import GeneNode, Loci, Locus
@@ -27,7 +28,6 @@ from kbank.io.sources import (
     parse_organism_and_strain,
 )
 from kbank.sugars import Sugars
-import pytest
 
 
 def test_kegg_parser_connected_vs_composition_filtering() -> None:
@@ -70,8 +70,7 @@ def test_csdb_expanded_sugars_and_chirality_prefix_protection() -> None:
     exotic_idx = Sugars.name_to_index[b"ExoticSugar"]
 
     seq = (
-        b"-3)aLDmanHepp(1-4)bDDmanHepp(1-3)bXylp(1-4)aDigp(1-3)"
-        b"bDhap(2-4)aKdop(2-3)bQuip3NAc(1-4)aFucp3NAc(1-3)aAscp(1-"
+        b"-3)aLDmanHepp(1-4)bDDmanHepp(1-3)bXylp(1-4)aDigp(1-3)bDhap(2-4)aKdop(2-3)bQuip3NAc(1-4)aFucp3NAc(1-3)aAscp(1-"
     )
     gly = csdb.parse(seq, strict=True)
     sugar_indices = [n.sugar for n in gly.nodes]
@@ -472,7 +471,7 @@ def test_cross_archetype_pan_graph_cassette_rescue_and_processive_gt() -> None:
     # 1. Cassette rescue: trisaccharide repeat (3 core linkages: 1 Wzy + 2 GTs needed),
     #    but locus has 1 Wzy, 1 GT, and 1 central-cassette UNKNOWN ORF (gene_index=2)
     g_rescue = csdb.parse(b"-4)bDManp(1-4)aLRhap(1-3)bDGalp(1-")
-    loc_rescue = Locus(
+    _loc_rescue = Locus(
         nodes=(
             GeneNode(GeneRole.INITIATOR, cluster_id=10),
             GeneNode(GeneRole.GLYCOSYLTRANSFERASE, cluster_id=201),
@@ -586,7 +585,6 @@ def test_topological_bitflags_and_gtrabc_branch_handling(tmp_path: Path) -> None
     from kbank.biosynthesis.align import (
         AssignmentEvidence,
         BiosyntheticAssigner,
-        TargetType,
     )
     from kbank.biosynthesis.classifier import (
         BiosyntheticClassifierSuite,
@@ -930,9 +928,3 @@ def test_relational_mpnn_acceptor_motif_and_cache_bundle(tmp_path: Path) -> None
     assert b"uid:999888777" in loaded_loci and len(loaded_loci[b"uid:999888777"][1]) == 0
     assert loaded_strains == strain_map
     assert loaded_dois == doi_map
-
-
-
-
-
-

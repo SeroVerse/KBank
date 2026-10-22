@@ -5,6 +5,7 @@ Provides `ClusterClassifier` (a subclass of `serogen.genes.GeneRoleClassifier`) 
 retaining/inverting catalytic mechanism, and initiating Und-PP sugar directly from
 amino acid sequences, with homology-cluster probability pooling (`predict_cluster_proba`).
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -16,11 +17,12 @@ from typing import TYPE_CHECKING, Any, Self
 import numpy as np
 from serogen.core.seq.seq import Sequences
 from serogen.genes.cnn import GeneRoleClassifier
+from serogen.genes.models import Genes
 from serogen.genes.roles import GeneRole
 from serogen.loci.models import Loci, Locus
 
 from kbank.biosynthesis.align import AssignmentEvidence, TargetType, _edge_signatures
-from kbank.glycan import Anomer, Chirality, Glycan, LinkageType, ResidueType
+from kbank.glycan import Anomer, Glycan, LinkageType, ResidueType
 from kbank.sugars import Sugars
 
 if TYPE_CHECKING:
@@ -103,7 +105,7 @@ def extract_acceptor_motif_for_edge(glycan: Glycan, edge_idx: int) -> int:
     red_idx = glycan.reducing_end_index
     acc_anomer = Anomer.UNKNOWN
     is_bb_node = False
-    for k_o, e_o in enumerate(glycan.edges):
+    for e_o in glycan.edges:
         if int(e_o.source) == t_idx and not glycan.nodes[e_o.target].is_modifier:
             if e_o.edge_type.is_backbone:
                 is_bb_node = True
@@ -250,8 +252,8 @@ class ClusterClassifier(GeneRoleClassifier):
 
     def top_k_accuracy(
         self,
-        X: Sequences | Sequence[Any] | tuple[np.ndarray, np.ndarray],
-        y: Sequence[int] | np.ndarray,
+        X: Genes | Sequences | Sequence[Any] | tuple[np.ndarray, np.ndarray],
+        y: Sequence[int | GeneRole] | np.ndarray,
         k: int = 3,
     ) -> float:
         """Compute Top-`k` classification accuracy on `(X, y)`."""
@@ -384,11 +386,7 @@ class ClusterClassifier(GeneRoleClassifier):
 
                 # Split multi-domain bifunctional GTs (>= 550 aa) assigned to 2+ reactions into N/C catalytic domains
                 e_ord = gene_edge_orders.get(int(a.gene_index), [])
-                if (
-                    len(e_ord) >= 2
-                    and a.edge_index is not None
-                    and int(a.edge_index) in e_ord
-                ):
+                if len(e_ord) >= 2 and a.edge_index is not None and int(a.edge_index) in e_ord:
                     doms = split_bifunctional_gt_domains(aa_seq, min_len=550, overlap=25)
                     if doms is not None:
                         pos_dom = e_ord.index(int(a.edge_index))
@@ -412,7 +410,11 @@ class ClusterClassifier(GeneRoleClassifier):
                                 if e_m.source == a.bipartite_glycan_index and not gly.nodes[e_m.target].is_modifier:
                                     acc_c = int(e_m.edge_type.acceptor)
                                     break
-                    elif a.target_type == TargetType.LINKAGE and a.edge_index is not None and 0 <= a.edge_index < len(gly.edges):
+                    elif (
+                        a.target_type == TargetType.LINKAGE
+                        and a.edge_index is not None
+                        and 0 <= a.edge_index < len(gly.edges)
+                    ):
                         e_m = gly.edges[a.edge_index]
                         if gly.nodes[e_m.source].is_modifier:
                             mod_sugar_id = int(gly.nodes[e_m.source].sugar)
@@ -570,10 +572,7 @@ class BiosyntheticClassifierSuite:
     @property
     def is_fitted(self) -> bool:
         """True if at least the core GT classifiers (`donor`, `linkage`, `mechanism`) are fitted."""
-        return all(
-            t in self.classifiers and self.classifiers[t].is_fitted
-            for t in ("donor", "linkage", "mechanism")
-        )
+        return all(t in self.classifiers and self.classifiers[t].is_fitted for t in ("donor", "linkage", "mechanism"))
 
     def __getitem__(self, target: str) -> ClusterClassifier:
         """Return the `ClusterClassifier` for `target`."""
@@ -599,10 +598,7 @@ class BiosyntheticClassifierSuite:
         if warm_start_backbone:
             try:
                 pretrained = GeneRoleClassifier.pretrained()
-                if (
-                    pretrained.embed_dim == embed_dim
-                    and pretrained.num_filters == num_filters
-                ):
+                if pretrained.embed_dim == embed_dim and pretrained.num_filters == num_filters:
                     base_clf = pretrained
             except Exception:
                 base_clf = None
@@ -643,7 +639,7 @@ class BiosyntheticClassifierSuite:
         """Save all fitted `ClusterClassifier` heads into a single compressed `.npz` archive (zero pickle)."""
         out_path = Path(path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        arrays: dict[str, np.ndarray] = {}
+        arrays: dict[str, Any] = {}
         present_targets: list[str] = []
         for target, clf in self.classifiers.items():
             if not clf.is_fitted:
@@ -658,9 +654,7 @@ class BiosyntheticClassifierSuite:
             arrays[f"{prefix}dense_b"] = clf.dense_b_
             arrays[f"{prefix}k_sizes"] = clf.k_sizes_
             arrays[f"{prefix}loss_history"] = np.asarray(getattr(clf, "loss_history_", []), dtype=np.float32)
-            arrays[f"{prefix}hyperparams"] = np.array(
-                [clf.vocab_size, clf.embed_dim, clf.num_filters], dtype=np.int32
-            )
+            arrays[f"{prefix}hyperparams"] = np.array([clf.vocab_size, clf.embed_dim, clf.num_filters], dtype=np.int32)
         arrays["targets"] = np.array([t.encode("ascii") for t in present_targets], dtype="S32")
         import os
 
@@ -707,9 +701,7 @@ class BiosyntheticClassifierSuite:
                     dtype=np.int32,
                 )
                 clf.loss_history_ = (
-                    data[f"{prefix}loss_history"].astype(np.float32).tolist()
-                    if f"{prefix}loss_history" in data
-                    else []
+                    data[f"{prefix}loss_history"].astype(np.float32).tolist() if f"{prefix}loss_history" in data else []
                 )
                 clf.lut_ = _compute_lut(clf.embedding_, clf.conv_w_, clf.k_sizes_)
                 suite[target] = clf
@@ -820,9 +812,7 @@ class BiosyntheticClassifierSuite:
                 seq_map = self._seq_probs.setdefault(target, {})
                 for idx_s, key in enumerate(keys_list):
                     row = raw_probs[idx_s]
-                    dist_s = {
-                        classes[c_i]: float(row[c_i]) for c_i in range(len(classes)) if row[c_i] >= 0.01
-                    }
+                    dist_s = {classes[c_i]: float(row[c_i]) for c_i in range(len(classes)) if row[c_i] >= 0.01}
                     gene_map[key] = dist_s
                     seq_map[seqs_list[idx_s]] = dist_s
                 self._gene_probs[target] = gene_map
@@ -870,11 +860,7 @@ class BiosyntheticClassifierSuite:
             clf = self.classifiers.get(target)
             if clf is not None and clf.is_fitted:
                 probs = clf.predict_proba([aa_seq])[0]
-                dist_val = {
-                    int(clf.classes_[i]): float(probs[i])
-                    for i in range(len(clf.classes_))
-                    if probs[i] >= 0.01
-                }
+                dist_val = {int(clf.classes_[i]): float(probs[i]) for i in range(len(clf.classes_)) if probs[i] >= 0.01}
                 s_map[aa_seq] = dist_val
                 return dist_val
         return {}

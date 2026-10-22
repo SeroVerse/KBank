@@ -1,4 +1,4 @@
-"""Four-stage Neuro-Symbolic GNN + Constrained Arborescence Predictor (`Locus -> Glycan`).
+"""Four-stage GNN + Constrained Arborescence Predictor (`Locus -> Glycan`).
 
 Implements:
 - Stage 1: Node feature initialization (`GeneRoleClassifier.transform` + 9-head `BiosyntheticClassifierSuite`
@@ -12,6 +12,7 @@ Implements:
   Assembler enforcing acceptor-carbon valence uniqueness (`c_acc` non-collision) and contiguous main-chain
   backbone grammar closed by `Wzy`, returning top-`k` `GlycanPrediction` candidates.
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -21,7 +22,7 @@ from typing import TYPE_CHECKING, Self
 
 import numpy as np
 from numba import njit
-from serogen.core.graph.arborescence import k_best_arborescences, maximum_spanning_arborescence
+from serogen.core.graph.arborescence import maximum_spanning_arborescence
 from serogen.core.graph.gnn import RelationalCSR, RelationalMPNN, build_multihop_csr
 from serogen.core.seq.pairwise import PairwiseAligner
 from serogen.core.seq.seq import Sequences
@@ -33,17 +34,14 @@ from serogen.loci.models import GeneNode, Locus
 from kbank.biosynthesis.align import (
     AssignmentEvidence,
     BiosyntheticAssigner,
-    BiosyntheticRuleRegistry,
     GeneGlycanAssignment,
     PanGraphConsensusPrior,
     TargetType,
     _edge_signatures,
 )
 from kbank.biosynthesis.classifier import (
-    MODIFIER_ROLES,
     BiosyntheticClassifierSuite,
     decode_donor_linkage_label,
-    decode_modifier_linkage_label,
     encode_acceptor_motif_label,
     encode_donor_linkage_label,
     encode_donor_residue_chem,
@@ -220,7 +218,10 @@ def _solve_constrained_arborescences_kernel(
             s_uw = score_matrix[u_depth, w]
 
             # Branch-and-bound upper-bound check
-            if n_found == max_candidates and (curr_score + s_uw + suffix_ub[u_depth + 1]) <= best_scores[max_candidates - 1]:
+            if (
+                n_found == max_candidates
+                and (curr_score + s_uw + suffix_ub[u_depth + 1]) <= best_scores[max_candidates - 1]
+            ):
                 # Since sorted_parents[u_depth] is sorted descending, remaining choices also fail UB
                 choice_idx[u_depth] = m - 1
                 break
@@ -380,7 +381,7 @@ class _GTSlotSpec:
 
 
 class GlycanPredictor:
-    """Four-stage Neuro-Symbolic GNN + Constrained Arborescence Predictor (`Locus -> Glycan`)."""
+    """Four-stage GNN + Constrained Arborescence Predictor (`Locus -> Glycan`)."""
 
     def __init__(
         self,
@@ -409,7 +410,8 @@ class GlycanPredictor:
         ref_wzy_links: np.ndarray | None = None,
         ref_wzy_record_indices: np.ndarray | None = None,
         multi_edge_clusters: dict[int, list[tuple[ResidueType, LinkageType]]] | None = None,
-        locus_fingerprints: dict[tuple[int, ...], list[tuple[int, Glycan, tuple[GeneGlycanAssignment, ...]]]] | None = None,
+        locus_fingerprints: dict[tuple[int, ...], list[tuple[int, Glycan, tuple[GeneGlycanAssignment, ...]]]]
+        | None = None,
         cluster_am_counts: dict[int, dict[int, float]] | None = None,
         ref_orf_seqs: tuple[bytes, ...] = (),
         ref_orf_cids: np.ndarray | None = None,
@@ -935,9 +937,7 @@ class GlycanPredictor:
             if nd.role == GeneRole.DEACETYLASE and nd.cluster_id == 0 and g_i < len(trans):
                 aa_len = len(trans[g_i].seq)
                 prev_role = new_nodes[g_i - 1].role if g_i > 0 else GeneRole.UNKNOWN
-                if 290 <= aa_len <= 390 and (
-                    has_gla or prev_role in (GeneRole.FLIPPASE, GeneRole.POLYMERASE)
-                ):
+                if 290 <= aa_len <= 390 and (has_gla or prev_role in (GeneRole.FLIPPASE, GeneRole.POLYMERASE)):
                     new_nodes[g_i] = GeneNode(GeneRole.GLYCOSYLTRANSFERASE, 0)
 
         return replace(locus, nodes=tuple(new_nodes))
@@ -946,7 +946,7 @@ class GlycanPredictor:
         self,
         locus: Locus,
     ) -> tuple[dict[bytes, float], set[int], np.ndarray]:
-        """Compute the Stage 2 Neuro-Symbolic Operon Precursor Pool (`c_pool`) for `locus`.
+        """Compute the Stage 2 Operon Precursor Pool (`c_pool`) for `locus`.
 
         Returns:
             `(pool_by_name, synthesized_specialized_sugars, donor_vocab_gate_multiplier)`.
@@ -1215,16 +1215,14 @@ class GlycanPredictor:
             core_gly = gly.without_modifiers()
             if len(core_gly.nodes) != 1 + len(gt_g_indices):
                 continue
-            gt_sources = {int(gly.edges[int(a.edge_index)].source) for a in by_gene_edge.values()}
+            gt_sources = {int(gly.edges[int(a.edge_index or 0)].source) for a in by_gene_edge.values()}
             if len(gt_sources) != len(gt_g_indices) or gly.reducing_end_index in gt_sources:
                 continue
 
             has_genes = len(loc.genes) > 0
             translations = loc.genes.translations if has_genes else ()
             init_aa = (
-                bytes(translations[init_g_idx].seq)
-                if (has_genes and 0 <= init_g_idx < len(translations))
-                else b""
+                bytes(translations[init_g_idx].seq) if (has_genes and 0 <= init_g_idx < len(translations)) else b""
             )
             slot_seqs: list[bytes] = [init_aa]
             for g_i in gt_g_indices:
@@ -1239,7 +1237,7 @@ class GlycanPredictor:
 
             for s_idx, g_i in enumerate(gt_g_indices, start=1):
                 a_g = by_gene_edge[g_i]
-                e_g = gly.edges[int(a_g.edge_index)]
+                e_g = gly.edges[int(a_g.edge_index or 0)]
                 node_to_slot[int(e_g.source)] = s_idx
                 p_bb_init[s_idx] = 1.0 if e_g.edge_type.is_backbone else 0.1
                 s_res = gly.nodes[e_g.source]
@@ -1259,7 +1257,7 @@ class GlycanPredictor:
             valid_edges = 0
             for s_idx, g_i in enumerate(gt_g_indices, start=1):
                 a_g = by_gene_edge[g_i]
-                e_g = gly.edges[int(a_g.edge_index)]
+                e_g = gly.edges[int(a_g.edge_index or 0)]
                 t_slot = node_to_slot.get(int(e_g.target), -1)
                 if 0 <= t_slot < m_nodes and t_slot != s_idx:
                     parent_targets[s_idx] = t_slot
@@ -1393,7 +1391,11 @@ class GlycanPredictor:
                 if (len(locus.genes) > 0 and init_gene_idx < len(locus.genes.translations))
                 else b""
             )
-            if len(aa_seq) >= 60 and self.classifier_suite is not None and "initiator_sugar" in self.classifier_suite.classifiers:
+            if (
+                len(aa_seq) >= 60
+                and self.classifier_suite is not None
+                and "initiator_sugar" in self.classifier_suite.classifiers
+            ):
                 init_clf = self.classifier_suite["initiator_sugar"]
                 probs = self._clf_proba_single("initiator_sugar", aa_seq)
                 if probs is not None:
@@ -1440,7 +1442,9 @@ class GlycanPredictor:
         out: list[tuple[ResidueType, float, AssignmentEvidence]] = []
         for r_chem, s_val in ranked:
             res = ResidueType(r_chem).with_reducing_end(True).with_backbone(True)
-            ev = ev_map.get(r_chem, AssignmentEvidence.GRAPH_ALIGNED if init_gene_idx >= 0 else AssignmentEvidence.RULE_INFERRED)
+            ev = ev_map.get(
+                r_chem, AssignmentEvidence.GRAPH_ALIGNED if init_gene_idx >= 0 else AssignmentEvidence.RULE_INFERRED
+            )
             out.append((res, float(min(0.99, max(0.35, s_val / tot_s))), ev))
         return init_gene_idx, out
 
@@ -1479,11 +1483,7 @@ class GlycanPredictor:
         for slot_i, g_idx in enumerate(gt_gene_indices):
             g_node = locus.nodes[g_idx]
             cid = int(g_node.cluster_id)
-            aa_seq = (
-                bytes(translations_loc[g_idx].seq)
-                if (has_genes_loc and g_idx < len(translations_loc))
-                else b""
-            )
+            aa_seq = bytes(translations_loc[g_idx].seq) if (has_genes_loc and g_idx < len(translations_loc)) else b""
 
             # Check hard/soft clamping
             if g_idx in clamped_by_gene:
@@ -1526,7 +1526,7 @@ class GlycanPredictor:
                     dl_counts_tier = self.pan_prior.cluster_sig_dl.get(c_tier, {})
                     tot_dl_tier = sum(dl_counts_tier.values()) or tot_sig
                     for sig, cnt in sig_counts.items():
-                        s_id, d_chi, is_fur, anom_val, don_val, acc_val, a_s_id, is_bb_sig = (
+                        s_id, d_chi, is_fur, anom_val, don_val, acc_val, a_s_id, _is_bb_sig = (
                             sig[0],
                             sig[1],
                             sig[2],
@@ -1544,9 +1544,7 @@ class GlycanPredictor:
                         p_emp = cnt / max(1e-6, tot_sig)
                         dl_sig_key = (s_id, d_chi, is_fur, anom_val, acc_val)
                         p_dl_emp = dl_counts_tier.get(dl_sig_key, cnt) / max(1e-6, tot_dl_tier)
-                        unanimous_boost = (
-                            3.00 if (c_tier == cid and p_dl_emp >= 0.80 and tot_dl_tier >= 1.8) else 1.0
-                        )
+                        unanimous_boost = 3.00 if (c_tier == cid and p_dl_emp >= 0.80 and tot_dl_tier >= 1.8) else 1.0
                         per_gt_dl_scores[slot_i][dl_lbl] = (
                             per_gt_dl_scores[slot_i].get(dl_lbl, 0.0)
                             + self.params.w_pan_dl * tier_scale * unanimous_boost * p_emp
@@ -1555,8 +1553,7 @@ class GlycanPredictor:
                             per_gt_ev[slot_i][dl_lbl] = AssignmentEvidence.PAN_GRAPH_CONSENSUS
                         d_c = encode_donor_residue_chem(res_d)
                         d_dist[d_c] = (
-                            d_dist.get(d_c, 0.0)
-                            + (0.78 * self.params.w_pan_dl) * tier_scale * unanimous_boost * p_emp
+                            d_dist.get(d_c, 0.0) + (0.78 * self.params.w_pan_dl) * tier_scale * unanimous_boost * p_emp
                         )
                         a_nat_chi = (
                             Chirality(Sugars.natural_chirality[a_s_id])
@@ -1576,10 +1573,9 @@ class GlycanPredictor:
                     am_counts_c = self.cluster_am_counts[c_tier]
                     tot_am_c = sum(am_counts_c.values())
                     for am_code, cnt_am in am_counts_c.items():
-                        per_gt_am_scores[slot_i][am_code] = (
-                            per_gt_am_scores[slot_i].get(am_code, 0.0)
-                            + (1.09 * self.params.w_pan_dl) * tier_scale * (cnt_am / max(1e-6, tot_am_c))
-                        )
+                        per_gt_am_scores[slot_i][am_code] = per_gt_am_scores[slot_i].get(am_code, 0.0) + (
+                            1.09 * self.params.w_pan_dl
+                        ) * tier_scale * (cnt_am / max(1e-6, tot_am_c))
 
             # 2. 192-D 1D-CNN Sequence Embedding k-NN Retrieval (works even when cluster_id == 0 or held-out!)
             if len(aa_seq) >= 70 and self.ref_gt_embeddings is not None and self.ref_gt_dl_labels is not None:
@@ -1646,8 +1642,8 @@ class GlycanPredictor:
                     for d_c, d_w in top_d:
                         for l_c, l_w in top_l:
                             dl_comb = encode_donor_linkage_label(ResidueType(d_c), LinkageType(l_c))
-                            per_gt_dl_scores[slot_i][dl_comb] = (
-                                per_gt_dl_scores[slot_i].get(dl_comb, 0.0) + 0.45 * min(d_w, l_w)
+                            per_gt_dl_scores[slot_i][dl_comb] = per_gt_dl_scores[slot_i].get(dl_comb, 0.0) + 0.45 * min(
+                                d_w, l_w
                             )
 
                 # For unclustered GTs (cid == 0), reconcile unaccounted operon precursor sugars with linkage anomer
@@ -1662,17 +1658,13 @@ class GlycanPredictor:
                     if unaccounted_special:
                         tot_l_w = sum(l_dist.values()) or 1.0
                         p_beta_l = (
-                            sum(w_l for l_c, w_l in l_dist.items() if LinkageType(l_c).anomer == Anomer.BETA)
-                            / tot_l_w
+                            sum(w_l for l_c, w_l in l_dist.items() if LinkageType(l_c).anomer == Anomer.BETA) / tot_l_w
                         )
                         p_alpha_l = (
-                            sum(w_l for l_c, w_l in l_dist.items() if LinkageType(l_c).anomer == Anomer.ALPHA)
-                            / tot_l_w
+                            sum(w_l for l_c, w_l in l_dist.items() if LinkageType(l_c).anomer == Anomer.ALPHA) / tot_l_w
                         )
                         pref_anom = (
-                            Anomer.BETA
-                            if p_beta_l >= 0.65
-                            else (Anomer.ALPHA if p_alpha_l >= 0.65 else Anomer.UNKNOWN)
+                            Anomer.BETA if p_beta_l >= 0.65 else (Anomer.ALPHA if p_alpha_l >= 0.65 else Anomer.UNKNOWN)
                         )
                         for dl_k, dl_sc in list(per_gt_dl_scores[slot_i].items()):
                             r_k, lnk_k = decode_donor_linkage_label(dl_k)
@@ -1691,9 +1683,7 @@ class GlycanPredictor:
                                 if covered_sugars:
                                     for c_sug in covered_sugars:
                                         c_chi = Chirality(Sugars.natural_chirality[c_sug])
-                                        a_c_sp = encode_donor_residue_chem(
-                                            ResidueType.from_sugar(c_sug, c_chi, False)
-                                        )
+                                        a_c_sp = encode_donor_residue_chem(ResidueType.from_sugar(c_sug, c_chi, False))
                                         acc_dist[a_c_sp] = max(acc_dist.values(), default=1.0) * 2.0
 
             # Populate initial node_donor_probs and node_acc_probs vectors
@@ -1722,9 +1712,7 @@ class GlycanPredictor:
             slot_seqs: list[bytes] = [init_aa]
             for g_idx_s in gt_gene_indices:
                 aa_s = (
-                    bytes(translations_loc[g_idx_s].seq)
-                    if (has_genes_loc and g_idx_s < len(translations_loc))
-                    else b""
+                    bytes(translations_loc[g_idx_s].seq) if (has_genes_loc and g_idx_s < len(translations_loc)) else b""
                 )
                 slot_seqs.append(aa_s)
             p_bb_init = np.concatenate(([1.0], node_bb_probs)).astype(np.float32)
@@ -1827,11 +1815,7 @@ class GlycanPredictor:
             for dl_lbl, raw_s in dl_map.items():
                 res_d, lnk = decode_donor_linkage_label(dl_lbl)
                 d_c = encode_donor_residue_chem(res_d)
-                mpnn_p = (
-                    float(node_donor_probs[slot_i, self.donor_to_idx[d_c]])
-                    if d_c in self.donor_to_idx
-                    else 0.05
-                )
+                mpnn_p = float(node_donor_probs[slot_i, self.donor_to_idx[d_c]]) if d_c in self.donor_to_idx else 0.05
                 s_id = int(res_d.sugar)
                 prec_mult = 1.25 if s_id in synthesized_special else (1.0 if s_id in HOUSEKEEPING_SUGARS else 0.85)
                 final_s = float(raw_s) * prec_mult * (0.82 + 0.35 * mpnn_p)
@@ -1887,12 +1871,7 @@ class GlycanPredictor:
                     n_gts <= 2
                     or (
                         n_gts <= 4
-                        and len(
-                            {
-                                (int(r_m.sugar), int(l_m.chemical_int))
-                                for r_m, l_m in self.multi_edge_clusters[cid]
-                            }
-                        )
+                        and len({(int(r_m.sugar), int(l_m.chemical_int)) for r_m, l_m in self.multi_edge_clusters[cid]})
                         == 1
                     )
                 )
@@ -1916,9 +1895,7 @@ class GlycanPredictor:
                             )
             elif not clamped_mask[slot_i] and n_gts == 1:
                 aa_seq_bi = (
-                    bytes(translations_loc[g_idx].seq)
-                    if (has_genes_loc and g_idx < len(translations_loc))
-                    else b""
+                    bytes(translations_loc[g_idx].seq) if (has_genes_loc and g_idx < len(translations_loc)) else b""
                 )
                 doms = split_bifunctional_gt_domains(aa_seq_bi, min_len=620, overlap=25)
                 if doms is not None and len(norm_cands) >= 2:
@@ -1931,9 +1908,7 @@ class GlycanPredictor:
                             best_nn = int(np.argmax(sims_c))
                             if float(sims_c[best_nn]) >= 0.80:
                                 res_c, lnk_c = decode_donor_linkage_label(int(self.ref_gt_dl_labels[best_nn]))
-                                c_cands.insert(
-                                    0, (res_c, lnk_c, 0.86, AssignmentEvidence.PAN_GRAPH_CONSENSUS)
-                                )
+                                c_cands.insert(0, (res_c, lnk_c, 0.86, AssignmentEvidence.PAN_GRAPH_CONSENSUS))
                     slots.append(
                         _GTSlotSpec(
                             gene_index=g_idx,
@@ -1998,7 +1973,11 @@ class GlycanPredictor:
                 if (len(locus.genes) > 0 and wzy_idx < len(locus.genes.translations))
                 else b""
             )
-            if len(aa_seq) >= 60 and self.classifier_suite is not None and "wzy_linkage" in self.classifier_suite.classifiers:
+            if (
+                len(aa_seq) >= 60
+                and self.classifier_suite is not None
+                and "wzy_linkage" in self.classifier_suite.classifiers
+            ):
                 w_clf = self.classifier_suite["wzy_linkage"]
                 probs = self._clf_proba_single("wzy_linkage", aa_seq)
                 if probs is not None:
@@ -2069,9 +2048,7 @@ class GlycanPredictor:
             return ()
 
         rescued_locus = (
-            self.assigner.rescue_cassette_roles(locus, reference_glycan)
-            if reference_glycan is not None
-            else locus
+            self.assigner.rescue_cassette_roles(locus, reference_glycan) if reference_glycan is not None else locus
         )
         if resolve_homologs and len(rescued_locus.genes) > 0 and all(n.cluster_id == 0 for n in rescued_locus.nodes):
             rescued_locus = self.resolve_locus_homologs(rescued_locus)
@@ -2161,7 +2138,16 @@ class GlycanPredictor:
 
         # Stage 4: Enumerate top node-state combinations & solve Constrained Spanning Arborescences
         m_nodes = 1 + len(gt_slots)
-        state_combos: list[tuple[float, ResidueType, float, AssignmentEvidence, list[tuple[ResidueType, LinkageType, float, AssignmentEvidence]], list[int]]] = []
+        state_combos: list[
+            tuple[
+                float,
+                ResidueType,
+                float,
+                AssignmentEvidence,
+                list[tuple[ResidueType, LinkageType, float, AssignmentEvidence]],
+                list[int],
+            ]
+        ] = []
 
         # Generate top state assignments across (root_cands, gt_slots)
         for r_res, r_prob, r_ev in root_cands[:2]:
@@ -2173,9 +2159,11 @@ class GlycanPredictor:
             def _score_combo(
                 ch_list: list[tuple[ResidueType, LinkageType, float, AssignmentEvidence]],
                 bb_list: list[int],
+                _r_prob: float = r_prob,
+                _r_res: ResidueType = r_res,
             ) -> float:
-                sc = float(np.log(max(r_prob, 1e-3)))
-                present_sugars = {int(r_res.sugar)}
+                sc = float(np.log(max(_r_prob, 1e-3)))
+                present_sugars = {int(_r_res.sugar)}
                 for idx_c, c_item in enumerate(ch_list):
                     sc += float(np.log(max(c_item[2], 1e-3)))
                     p_b = gt_slots[idx_c].p_backbone if bb_list[idx_c] == 1 else (1.0 - gt_slots[idx_c].p_backbone)
@@ -2204,7 +2192,14 @@ class GlycanPredictor:
                     flipped_bb[s_i] = 1 - flipped_bb[s_i]
                     if any(b == 1 for b in flipped_bb):
                         state_combos.append(
-                            (_score_combo(base_choices, flipped_bb), r_res, r_prob, r_ev, list(base_choices), flipped_bb)
+                            (
+                                _score_combo(base_choices, flipped_bb),
+                                r_res,
+                                r_prob,
+                                r_ev,
+                                list(base_choices),
+                                flipped_bb,
+                            )
                         )
                 # Short-backbone + long-branch topology when Wzy specifically closes onto slot s_i's sugar
                 if not slot.is_clamped and len(gt_slots) >= 3 and sum(base_bb) >= 2:
@@ -2385,12 +2380,19 @@ class GlycanPredictor:
                                 if max_acc_share >= 0.75:
                                     if exact_acc_w > 0:
                                         has_exact_pan_acc_uw = True
-                                        s_uw += self.params.w_pan_acc_match * tier_scale * (exact_acc_w / max(1e-6, tot_u))
+                                        s_uw += (
+                                            self.params.w_pan_acc_match * tier_scale * (exact_acc_w / max(1e-6, tot_u))
+                                        )
                                     else:
                                         s_uw -= (0.49 * self.params.w_pan_acc_match) * tier_scale
                                 elif exact_acc_w > 0:
                                     has_exact_pan_acc_uw = True
-                                    s_uw += 0.20 * self.params.w_pan_acc_match * tier_scale * (exact_acc_w / max(1e-6, tot_u))
+                                    s_uw += (
+                                        0.20
+                                        * self.params.w_pan_acc_match
+                                        * tier_scale
+                                        * (exact_acc_w / max(1e-6, tot_u))
+                                    )
                             elif tot_u >= 1.8:
                                 s_uw -= (0.49 * self.params.w_pan_acc_match) * tier_scale
 
@@ -2412,9 +2414,9 @@ class GlycanPredictor:
                     # 2. Pan-Glycan Empirical Disaccharide Bigram Prior
                     c_exact = self.disaccharide_counts.get((d_chem_u, l_chem_u, a_chem_w), 0)
                     c_pair = self.donor_acc_counts.get((d_chem_u, a_chem_w), 0)
-                    s_uw += self.params.w_disac_bigram * np.log1p(c_exact) + (0.38 * self.params.w_disac_bigram) * np.log1p(
-                        c_pair
-                    )
+                    s_uw += self.params.w_disac_bigram * np.log1p(c_exact) + (
+                        0.38 * self.params.w_disac_bigram
+                    ) * np.log1p(c_pair)
 
                     # 3. Pan-Locus Syntenic & Operon Progression Prior
                     if w == 0:
@@ -2454,12 +2456,8 @@ class GlycanPredictor:
                                 + self.pan_prior.syntenic_pair_record_counts.get(
                                     (slot_u.cluster_id, slot_w.cluster_id), 0
                                 )
-                                + self.pan_prior.pan_locus_edge_counts.get(
-                                    (slot_w.cluster_id, slot_u.cluster_id), 0
-                                )
-                                + self.pan_prior.pan_locus_edge_counts.get(
-                                    (slot_u.cluster_id, slot_w.cluster_id), 0
-                                )
+                                + self.pan_prior.pan_locus_edge_counts.get((slot_w.cluster_id, slot_u.cluster_id), 0)
+                                + self.pan_prior.pan_locus_edge_counts.get((slot_u.cluster_id, slot_w.cluster_id), 0)
                             )
                             s_uw += self.params.w_syntenic_step * np.log1p(c_bg)
 
@@ -2535,17 +2533,21 @@ class GlycanPredictor:
 
                 # Close polymer repeat with Wzy linkage (`0 -> tip_idx`) when repeating
                 has_wzy_gene = any(n.role == GeneRole.POLYMERASE for n in rescued_locus.nodes)
-                if is_repeating and (
-                    has_wzy_gene
-                    or arch
-                    in (
-                        LocusArchetype.CPS_WZY,
-                        LocusArchetype.LPS_WZY,
-                        LocusArchetype.LPS_ABC,
-                        LocusArchetype.CPS_ABC,
-                        LocusArchetype.CPS_SYNTHASE,
+                if (
+                    is_repeating
+                    and (
+                        has_wzy_gene
+                        or arch
+                        in (
+                            LocusArchetype.CPS_WZY,
+                            LocusArchetype.LPS_WZY,
+                            LocusArchetype.LPS_ABC,
+                            LocusArchetype.CPS_ABC,
+                            LocusArchetype.CPS_SYNTHASE,
+                        )
                     )
-                ) and tip_idx != 0:
+                    and tip_idx != 0
+                ):
                     wzy_g_idx, wzy_lt, wzy_conf, wzy_ev = self._predict_wzy_candidates(
                         rescued_locus,
                         nodes_list[0],
@@ -2572,16 +2574,13 @@ class GlycanPredictor:
                         if wzy_cid > 0 and wzy_cid in self.pan_prior.cluster_sig_full:
                             w_sigs_all = self.pan_prior.cluster_sig_full[wzy_cid]
                             root_s_id = int(nodes_list[0].sugar)
-                            w_sigs_root = {
-                                sig_w: cnt_w for sig_w, cnt_w in w_sigs_all.items() if sig_w[0] == root_s_id
-                            }
+                            w_sigs_root = {sig_w: cnt_w for sig_w, cnt_w in w_sigs_all.items() if sig_w[0] == root_s_id}
                             w_sigs = w_sigs_root if w_sigs_root else w_sigs_all
                             w_tot = sum(w_sigs.values())
                             w_tip_match = sum(
                                 cnt_w
                                 for sig_w, cnt_w in w_sigs.items()
-                                if sig_w[6] == int(nodes_list[tip_idx].sugar)
-                                and sig_w[5] == int(wzy_lt.acceptor)
+                                if sig_w[6] == int(nodes_list[tip_idx].sugar) and sig_w[5] == int(wzy_lt.acceptor)
                             )
                             if w_tip_match > 0:
                                 tree_sc += 4.5 * (w_tip_match / max(1e-6, w_tot))

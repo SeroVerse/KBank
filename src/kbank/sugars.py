@@ -22,7 +22,6 @@ _CANONICAL_SUGARS: list[tuple[bytes, bytes, bool, bool, bool, bool, bool, float,
     (b"Hex", b"All", False, False, False, False, False, 180.156, 0b010, 1, ()),
     (b"Hex", b"Tal", False, False, False, False, False, 180.156, 0b101, 1, ()),
     (b"Hex", b"Ido", False, False, False, False, False, 180.156, 0b111, 2, ()),
-
     # HexNAc
     (b"HexNAc", b"GlcNAc", False, False, True, True, False, 221.208, 0b000, 1, (b"GlcpNAc",)),
     (b"HexNAc", b"GalNAc", False, False, True, True, False, 221.208, 0b100, 1, (b"GalpNAc",)),
@@ -32,7 +31,6 @@ _CANONICAL_SUGARS: list[tuple[bytes, bytes, bool, bool, bool, bool, bool, float,
     (b"HexNAc", b"AllNAc", False, False, True, True, False, 221.208, 0b010, 1, ()),
     (b"HexNAc", b"TalNAc", False, False, True, True, False, 221.208, 0b101, 1, ()),
     (b"HexNAc", b"IdoNAc", False, False, True, True, False, 221.208, 0b111, 2, ()),
-
     # Hexosamines
     (b"HexN", b"GlcN", False, False, True, False, False, 179.17, 0b000, 1, (b"GlcpN",)),
     (b"HexN", b"ManN", False, False, True, False, False, 179.17, 0b001, 1, (b"ManpN",)),
@@ -42,7 +40,6 @@ _CANONICAL_SUGARS: list[tuple[bytes, bytes, bool, bool, bool, bool, bool, float,
     (b"HexN", b"AllN", False, False, True, False, False, 179.17, 0b010, 1, ()),
     (b"HexN", b"TalN", False, False, True, False, False, 179.17, 0b101, 1, ()),
     (b"HexN", b"IdoN", False, False, True, False, False, 179.17, 0b111, 2, ()),
-
     # Hexuronates
     (b"HexA", b"GlcA", False, False, False, False, False, 194.139, 0b000, 1, (b"GlcpA",)),
     (b"HexA", b"ManA", False, False, False, False, False, 194.139, 0b001, 1, (b"ManpA",)),
@@ -52,16 +49,38 @@ _CANONICAL_SUGARS: list[tuple[bytes, bytes, bool, bool, bool, bool, bool, float,
     (b"HexA", b"AllA", False, False, False, False, False, 194.139, 0b010, 1, ()),
     (b"HexA", b"TalA", False, False, False, False, False, 194.139, 0b101, 1, ()),
     (b"HexA", b"IdoA", False, False, False, False, False, 194.139, 0b111, 2, ()),
-
     # Deoxyhexoses
     (b"dHex", b"Fuc", False, True, False, False, False, 164.156, 0b100, 2, (b"Fucp", b"Fucf")),
     (b"dHex", b"Qui", False, True, False, False, False, 164.156, 0b000, 1, (b"Quip",)),
     (b"dHex", b"Rha", False, True, False, False, False, 164.156, 0b001, 2, (b"Rhap", b"Rhaf")),
     (b"dHex", b"6dGul", False, True, False, False, False, 164.156, 0b110, 1, (b"six_dGul", b"6-dGul", b"6dGulp")),
-    (b"dHex", b"6dAlt", False, True, False, False, False, 164.156, 0b011, 2, (b"6dAltp", b"6dAltf", b"six_dAlt", b"6-dAlt")),
-    (b"dHex", b"6dTal", False, True, False, False, False, 164.156, 0b101, 1, (b"6dTalp", b"6dTalf", b"six_dTal", b"6-dTal")),
+    (
+        b"dHex",
+        b"6dAlt",
+        False,
+        True,
+        False,
+        False,
+        False,
+        164.156,
+        0b011,
+        2,
+        (b"6dAltp", b"6dAltf", b"six_dAlt", b"6-dAlt"),
+    ),
+    (
+        b"dHex",
+        b"6dTal",
+        False,
+        True,
+        False,
+        False,
+        False,
+        164.156,
+        0b101,
+        1,
+        (b"6dTalp", b"6dTalf", b"six_dTal", b"6-dTal"),
+    ),
     (b"dHex", b"6dxylHex", False, True, False, False, False, 164.156, 0b000, 1, (b"6dxylHexp", b"dHex", b"dHexp")),
-
     # DeoxyhexNAc
     (
         b"dHexNAc",
@@ -92,10 +111,33 @@ _CANONICAL_SUGARS: list[tuple[bytes, bytes, bool, bool, bool, bool, bool, float,
         2,
         (b"FucpNAc", b"Fuc3NAc", b"Fucp3NAc", b"Fuc4NAc", b"Fucp4NAc"),
     ),
-
     # Deoxyhexosamines
-    (b"dHexN", b"FucN", False, True, True, False, False, 163.17, 0b100, 2, (b"FucpN", b"Fuc3N", b"Fucp3N", b"Fuc4N", b"Fucp4N")),
-    (b"dHexN", b"QuiN", False, True, True, False, False, 163.17, 0b000, 1, (b"QuipN", b"Qui3N", b"Quip3N", b"Qui4N", b"Quip4N")),
+    (
+        b"dHexN",
+        b"FucN",
+        False,
+        True,
+        True,
+        False,
+        False,
+        163.17,
+        0b100,
+        2,
+        (b"FucpN", b"Fuc3N", b"Fucp3N", b"Fuc4N", b"Fucp4N"),
+    ),
+    (
+        b"dHexN",
+        b"QuiN",
+        False,
+        True,
+        True,
+        False,
+        False,
+        163.17,
+        0b000,
+        1,
+        (b"QuipN", b"Qui3N", b"Quip3N", b"Qui4N", b"Quip4N"),
+    ),
     (b"dHexN", b"RhaN", False, True, True, False, False, 163.17, 0b001, 2, (b"RhapN", b"Rha3N", b"Rhap3N")),
     (
         b"dHexN",
@@ -136,28 +178,48 @@ _CANONICAL_SUGARS: list[tuple[bytes, bytes, bool, bool, bool, bool, bool, float,
         2,
         (b"RhapN3N", b"Rha2N3N", b"Rhap2N3N", b"RhaNAc3NAc", b"RhapNAc3NAc"),
     ),
-
     # Aminohexuronates
     (b"HexNA", b"GalNA", False, False, True, False, False, 193.15, 0b100, 1, (b"GalpNA", b"GalNAcA", b"GalpNAcA")),
     (b"HexNA", b"GlcNA", False, False, True, False, False, 193.15, 0b000, 1, (b"GlcpNA", b"GlcNAcA", b"GlcpNAcA")),
     (b"HexNA", b"ManNA", False, False, True, False, False, 193.15, 0b001, 1, (b"ManpNA", b"ManNAcA", b"ManpNAcA")),
-    (b"HexNA", b"GlcN3NA", False, False, True, False, False, 193.15, 0b000, 1, (b"GlcpN3NA", b"GlcNAc3NAcA", b"GlcpNAc3NAcA")),
-
+    (
+        b"HexNA",
+        b"GlcN3NA",
+        False,
+        False,
+        True,
+        False,
+        False,
+        193.15,
+        0b000,
+        1,
+        (b"GlcpN3NA", b"GlcNAc3NAcA", b"GlcpNAc3NAcA"),
+    ),
     # Dideoxyhexoses
-    (b"ddHex", b"Oli", False, True, False, False, False, 148.16, 0b000, 1, (b"Olip", b"Yer", b"Yerp", b"ddHex", b"ddHexp")),
+    (
+        b"ddHex",
+        b"Oli",
+        False,
+        True,
+        False,
+        False,
+        False,
+        148.16,
+        0b000,
+        1,
+        (b"Olip", b"Yer", b"Yerp", b"ddHex", b"ddHexp"),
+    ),
     (b"ddHex", b"Tyv", False, True, False, False, False, 148.16, 0b001, 1, (b"Tyvp", b"Tyvf")),
     (b"ddHex", b"Abe", False, True, False, False, False, 148.16, 0b100, 1, (b"Abep", b"Abef")),
     (b"ddHex", b"Par", False, True, False, False, False, 148.16, 0b000, 1, (b"Parp", b"Asc", b"Ascp")),
     (b"ddHex", b"Dig", False, True, False, False, False, 148.16, 0b000, 1, (b"Digp",)),
     (b"ddHex", b"Col", False, True, False, False, False, 148.16, 0b100, 2, (b"Colp", b"Colf")),
-
     # Pentoses
     (b"Pen", b"Ara", False, False, False, False, False, 150.13, 0b000, 2, (b"Araf", b"Arap")),
     (b"Pen", b"Lyx", False, False, False, False, False, 150.13, 0b001, 1, (b"Lyxp", b"Lyxf")),
     (b"Pen", b"Xyl", False, False, False, False, False, 150.13, 0b000, 1, (b"Xylp", b"Xylf", b"Xul", b"Xulp", b"Xulf")),
     (b"Pen", b"Rib", False, False, False, False, False, 150.13, 0b010, 1, (b"Ribp", b"Ribf", b"Rul", b"Rulp", b"Rulf")),
     (b"Pen", b"Api", False, False, False, False, False, 150.13, 0b000, 2, (b"Apif", b"Apip")),
-
     # Nonulosonic & Higher Acids
     (b"NeuAc", b"Neu5Ac", True, False, True, True, False, 309.27, 0, 0, (b"Sia", b"Neup5Ac")),
     (b"NeuGc", b"Neu5Gc", True, False, True, True, False, 325.27, 0, 0, (b"Neup5Gc",)),
@@ -192,13 +254,11 @@ _CANONICAL_SUGARS: list[tuple[bytes, bytes, bool, bool, bool, bool, bool, float,
     (b"MurAc", b"MurNAc", False, False, True, True, False, 293.27, 0, 1, (b"MurpNAc",)),
     (b"MurGc", b"MurNGc", False, False, True, True, False, 309.27, 0, 1, (b"MurpNGc",)),
     (b"gMur", b"Mur", False, False, True, False, False, 251.23, 0, 1, (b"Murp",)),
-
     # Ketoses
     (b"Hex", b"Fru", True, False, False, False, False, 180.156, 0, 1, (b"Fruf", b"Frup")),
     (b"Hex", b"Tag", True, False, False, False, False, 180.156, 0, 1, (b"Tagp", b"Tagf")),
     (b"Hex", b"Sor", True, False, False, False, False, 180.156, 0, 2, (b"Sorp", b"Sorf")),
     (b"Hex", b"Psi", True, False, False, False, False, 180.156, 0, 1, (b"Psip", b"Psif")),
-
     # Abstract Wildcards
     (b"Sug", b"Sug", False, False, False, False, True, 180.0, 0, 0, ()),
     (b"Hex", b"Hex", False, False, False, False, True, 180.156, 0, 0, ()),
@@ -208,7 +268,6 @@ _CANONICAL_SUGARS: list[tuple[bytes, bytes, bool, bool, bool, bool, bool, float,
     (b"Pen", b"Pen", False, False, False, False, True, 150.13, 0, 0, ()),
     (b"Subst", b"Subst", False, False, False, False, True, 0.0, 0, 0, ()),
     (b"Hex", b"ExoticSugar", False, False, False, False, True, 200.0, 0, 0, ()),
-
     # Modifiers & Acyl Substituents
     (b"Mod", b"OAc", False, False, False, False, False, 43.04, 0, 0, (b"Ac",)),
     (b"Mod", b"Pyr", False, False, False, False, False, 87.05, 0, 0, ()),
@@ -331,6 +390,7 @@ def infer_donor_and_carrier(name: bytes, sugar_class: bytes) -> tuple[bytes, byt
 # ----------------------------------------------------------------------------------------------------------------------
 # Sugars Registry & SoA Database Class
 # ----------------------------------------------------------------------------------------------------------------------
+
 
 class Sugars:
     """High-performance Structure-of-Arrays (SoA) registry for monosaccharides and carbohydrate modifiers."""
@@ -489,6 +549,3 @@ def _init_sugars() -> None:
 
 
 _init_sugars()
-
-
-

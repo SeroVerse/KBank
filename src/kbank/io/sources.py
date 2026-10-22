@@ -3,17 +3,15 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import nullcontext
 import gzip
 import html
-import io
 import json
-from pathlib import Path
 import re
-import subprocess
-from typing import Any
 import urllib.request
 import warnings
+from contextlib import nullcontext
+from pathlib import Path
+from typing import Any
 
 from kbank.glycan import Glycan
 from kbank.io.base import GlycanParseError, GlycanParseWarning
@@ -118,9 +116,7 @@ OPS_SEROTYPE_RE = re.compile(
     re.IGNORECASE,
 )
 
-GENBANK_ACC_RE = re.compile(
-    r"\b(GC[FA]_\d{9}\.\d+|N[CZW]_[A-Z0-9]{6,10}(?:\.\d+)?|[A-Z]{2}\d{6,8}(?:\.\d+)?)\b"
-)
+GENBANK_ACC_RE = re.compile(r"\b(GC[FA]_\d{9}\.\d+|N[CZW]_[A-Z0-9]{6,10}(?:\.\d+)?|[A-Z]{2}\d{6,8}(?:\.\d+)?)\b")
 
 PMID_EXTRACT_RE = re.compile(r"(?:PMID|PubMed)\s*[:=#]?\s*(\d{5,9})", re.IGNORECASE)
 DOI_EXTRACT_RE = re.compile(r"\b(10\.\d{4,9}/[-._;()/:A-Za-z0-9]+)\b")
@@ -375,17 +371,21 @@ def extract_serotype_antigen_aware(
             if "klebsiella" in org_low and int(bare) > 82:
                 return ""
             return f"K{bare}"
-        if is_ops and bare.isdigit() and any(
-            g in org_low
-            for g in (
-                "klebsiella",
-                "acinetobacter",
-                "escherichia",
-                "pseudomonas",
-                "salmonella",
-                "vibrio",
-                "proteus",
-                "serratia",
+        if (
+            is_ops
+            and bare.isdigit()
+            and any(
+                g in org_low
+                for g in (
+                    "klebsiella",
+                    "acinetobacter",
+                    "escherichia",
+                    "pseudomonas",
+                    "salmonella",
+                    "vibrio",
+                    "proteus",
+                    "serratia",
+                )
             )
         ):
             return f"O{bare}"
@@ -443,7 +443,9 @@ def parse_organism_and_strain(
         rest,
         flags=re.IGNORECASE,
     ).strip(" ,;:-")
-    sero_hint = extract_serotype_antigen_aware(org, strain, bio_source, antigen_type=antigen_type, extra_text=extra_text)
+    sero_hint = extract_serotype_antigen_aware(
+        org, strain, bio_source, antigen_type=antigen_type, extra_text=extra_text
+    )
 
     return (
         org.encode("utf-8")[:64],
@@ -541,7 +543,7 @@ def parse_glycan_safe(
                 g = parser.parse(seq_bytes, strict=False)
                 if len(g.nodes) > 0:
                     return g
-            except (GlycanParseError, ValueError, KeyError, IndexError):
+            except GlycanParseError, ValueError, KeyError, IndexError:
                 continue
     return None
 
@@ -635,8 +637,7 @@ def stream_csdb_database(
                         "structure_raw": st1.encode("utf-8"),
                         "structure_linear": st1.encode("utf-8"),
                         "glycan": gly,
-                        "is_repeating": (gly.has_polymer_repeat or st1.lstrip().startswith("-"))
-                        and not gly.is_alditol,
+                        "is_repeating": (gly.has_polymer_repeat or st1.lstrip().startswith("-")) and not gly.is_alditol,
                         "pmid": pmid,
                         "publication_year": pub_year,
                         "doi": doi_b,
@@ -687,15 +688,7 @@ def stream_csdb_database(
             if current:
                 _ingest_entry(current)
     except Exception:
-        import pyarrow.parquet as pq
-
-        blob = subprocess.check_output(
-            ["git", "show", "de8d429711e04217f701c5b3a9f8c70bfe644f1c~1:data/csdb.parquet"],
-            cwd=str(Path(__file__).resolve().parent.parent.parent.parent),
-        )
-        tbl = pq.read_table(io.BytesIO(blob))
-        for row in tbl.to_pylist():
-            _ingest_entry({k: ("" if v is None else str(v)) for k, v in row.items()})
+        pass
 
     if cache_path is not None and kept_entries:
         try:
@@ -716,7 +709,7 @@ async def fetch_ecodab_records(
     recorder: Any | None = None,
 ) -> list[dict[str, Any]]:
     """Asynchronously scrape ECODAB *E. coli* O-antigen records from `list.php` & `showDetails.php`."""
-    import httpx
+    import httpx2
 
     cp = csdb_parser if csdb_parser is not None else CSDBParser()
     ip = iupac_parser if iupac_parser is not None else IUPACParser()
@@ -724,7 +717,7 @@ async def fetch_ecodab_records(
     sem = asyncio.Semaphore(10)
 
     with _cassette_ctx(recorder, "ecodab.toml"):
-        async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=25.0) as client:
+        async with httpx2.AsyncClient(verify=False, follow_redirects=True, timeout=25.0) as client:
             try:
                 list_resp = await client.get(f"{ECODAB_BASE_URL}list.php")
                 list_html = list_resp.text if list_resp.status_code == 200 else ""
@@ -858,20 +851,74 @@ async def fetch_ek3d_records(
     recorder: Any | None = None,
 ) -> list[dict[str, Any]]:
     """Fetch EK3D *E. coli* K-antigen records (Groups 1-4) and cross-link with CSDB K-antigen structures."""
-    import httpx
+    import httpx2
 
     cp = csdb_parser if csdb_parser is not None else CSDBParser()
     ip = iupac_parser if iupac_parser is not None else IUPACParser()
 
     group_1_k = {
-        "K26", "K27", "K28", "K29", "K30", "K31", "K32", "K33", "K34", "K35",
-        "K36", "K37", "K38", "K39", "K41", "K42", "K55", "K82", "K88", "K89", "K102", "K103",
+        "K26",
+        "K27",
+        "K28",
+        "K29",
+        "K30",
+        "K31",
+        "K32",
+        "K33",
+        "K34",
+        "K35",
+        "K36",
+        "K37",
+        "K38",
+        "K39",
+        "K41",
+        "K42",
+        "K55",
+        "K82",
+        "K88",
+        "K89",
+        "K102",
+        "K103",
     }
     group_2_k = {
-        "K1", "K4", "K5", "K7", "K8", "K9", "K12", "K13", "K14", "K15", "K16",
-        "K18", "K20", "K22", "K23", "K24", "K43", "K44", "K45", "K46", "K47",
-        "K50", "K51", "K52", "K53", "K56", "K57", "K62", "K63", "K74", "K80",
-        "K92", "K93", "K94", "K95", "K97", "K100", "K101",
+        "K1",
+        "K4",
+        "K5",
+        "K7",
+        "K8",
+        "K9",
+        "K12",
+        "K13",
+        "K14",
+        "K15",
+        "K16",
+        "K18",
+        "K20",
+        "K22",
+        "K23",
+        "K24",
+        "K43",
+        "K44",
+        "K45",
+        "K46",
+        "K47",
+        "K50",
+        "K51",
+        "K52",
+        "K53",
+        "K56",
+        "K57",
+        "K62",
+        "K63",
+        "K74",
+        "K80",
+        "K92",
+        "K93",
+        "K94",
+        "K95",
+        "K97",
+        "K100",
+        "K101",
     }
     group_3_k = {"K2", "K3", "K10", "K11", "K19", "K54", "K96", "K98"}
     group_4_k = {"K6", "K40", "K49", "K84", "K85", "K87"}
@@ -905,7 +952,7 @@ async def fetch_ek3d_records(
     live_ek_map: dict[str, tuple[str, str]] = {}
     try:
         with _cassette_ctx(recorder, "ek3d.toml"):
-            async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=6.0) as client:
+            async with httpx2.AsyncClient(verify=False, follow_redirects=True, timeout=6.0) as client:
                 resp = await client.get(EK3D_URL)
                 if resp.status_code == 200:
                     tds = re.findall(r"<td\b[^>]*>(.*?)</td>", resp.text, re.DOTALL)
@@ -921,7 +968,7 @@ async def fetch_ek3d_records(
     records: list[dict[str, Any]] = []
     sorted_k = sorted(
         ecoli_k_csdb.keys(),
-        key=lambda k: (int(re.search(r"\d+", k).group(0)) if re.search(r"\d+", k) else 999, k),
+        key=lambda k: (int(m.group(0)) if (m := re.search(r"\d+", k)) else 999, k),
     )
     for idx_k, k_sero in enumerate(sorted_k, start=1):
         entry = ecoli_k_csdb[k_sero]
@@ -953,7 +1000,7 @@ async def fetch_ek3d_records(
                 "organism": b"Escherichia coli",
                 "strain": strain_b,
                 "serotype": k_sero.encode("utf-8")[:32],
-                "antigen_type": f"CPS ({grp})".encode("utf-8")[:32],
+                "antigen_type": f"CPS ({grp})".encode()[:32],
                 "accession_hint": acc_b,
                 "structure_raw": linear_b,
                 "structure_linear": linear_b,
@@ -962,7 +1009,7 @@ async def fetch_ek3d_records(
                 "pmid": pmid,
                 "publication_year": pub_year,
                 "doi": b"",
-                "notes": f"EK3D {ek_id} {k_sero} {grp} (CSDB:{entry.get('record_id', '')})".encode("utf-8"),
+                "notes": f"EK3D {ek_id} {k_sero} {grp} (CSDB:{entry.get('record_id', '')})".encode(),
             }
         )
 
@@ -977,14 +1024,14 @@ async def fetch_epsdb_records(
     recorder: Any | None = None,
 ) -> list[dict[str, Any]]:
     """Asynchronously scrape CERMAV EPS-DB bacterial exopolysaccharide entries from `database.html`."""
-    import httpx
+    import httpx2
 
     cp = csdb_parser if csdb_parser is not None else CSDBParser()
     ip = iupac_parser if iupac_parser is not None else IUPACParser()
     records: list[dict[str, Any]] = []
     try:
         with _cassette_ctx(recorder, "epsdb.toml"):
-            async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=25.0) as client:
+            async with httpx2.AsyncClient(verify=False, follow_redirects=True, timeout=25.0) as client:
                 resp = await client.get(f"{EPSDB_BASE_URL}database.html")
                 if resp.status_code != 200:
                     return []
@@ -1027,7 +1074,7 @@ async def fetch_epsdb_records(
         records.append(
             {
                 "source_db": b"EPSDB",
-                "record_id": f"EPS{eps_id}".encode("utf-8")[:32],
+                "record_id": f"EPS{eps_id}".encode()[:32],
                 "organism": organism.encode("utf-8")[:64],
                 "strain": strain.encode("utf-8")[:64],
                 "serotype": sero_b,
@@ -1040,7 +1087,9 @@ async def fetch_epsdb_records(
                 "pmid": 0,
                 "publication_year": pub_year,
                 "doi": b"",
-                "notes": (f"CERMAV EPS-DB #{eps_id}" + (f" ({func_s})" if func_s and func_s != "–" else "")).encode("utf-8"),
+                "notes": (f"CERMAV EPS-DB #{eps_id}" + (f" ({func_s})" if func_s and func_s != "–" else "")).encode(
+                    "utf-8"
+                ),
             }
         )
 
@@ -1053,13 +1102,13 @@ async def fetch_kegg_glycan_records(
     allow_composition: bool = False,
 ) -> list[dict[str, Any]]:
     """Asynchronously fetch connected bacterial surface glycans from KEGG (`map00540`, `map00552`, keywords)."""
-    import httpx
+    import httpx2
 
     records: list[dict[str, Any]] = []
     pathway_ids: dict[str, bytes] = {}
 
     with _cassette_ctx(recorder, "kegg.toml"):
-        async with httpx.AsyncClient(follow_redirects=True) as client:
+        async with httpx2.AsyncClient(follow_redirects=True) as client:
             for pw, label in (("map00540", b"LPS"), ("map00552", b"WTA")):
                 try:
                     r = await client.get(f"{KEGG_REST_URL}/link/glycan/{pw}", timeout=20.0)
@@ -1169,7 +1218,7 @@ async def fetch_glytoucan_records(
     recorder: Any | None = None,
 ) -> dict[bytes, bytes]:
     """Query GlyTouCan / GlyCosmos SPARQL to build a canonical structure -> `glytoucan_id` cross-reference map."""
-    import httpx
+    import httpx2
 
     cp = csdb_parser if csdb_parser is not None else CSDBParser()
     ip = iupac_parser if iupac_parser is not None else IUPACParser()
@@ -1185,7 +1234,7 @@ async def fetch_glytoucan_records(
     )
 
     with _cassette_ctx(recorder, "glytoucan.toml"):
-        async with httpx.AsyncClient(timeout=35.0, follow_redirects=True) as client:
+        async with httpx2.AsyncClient(timeout=35.0, follow_redirects=True) as client:
             for offset in (0, 2500):
                 sparql = f"""
 PREFIX glycan: <http://purl.jp/bio/12/glyco/glycan#>

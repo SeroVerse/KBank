@@ -7,35 +7,35 @@ from kbank.sugars import Sugars
 
 
 class CSDBParser(GlycanParser):
-    _RE_POLYMER_DONOR = re.compile(br"\(([0-9?]+)-?(P)?-?\s*$")
-    _RE_POLYMER_ACCEPTOR = re.compile(br"^\s*-([0-9?P-]+)\)")
-    _RE_PERCENTAGES = re.compile(br"\d*%+")
-    _RE_FUZZY_OR = re.compile(br"<<([^|>]+)[^>]*>>")
-    _RE_DANGLING_CAP = re.compile(br"^-\d+\)")
-    _RE_COMMENT = re.compile(br"\s*//.*$")
-    _RE_NEU = re.compile(br"^(Neu)([pf]?)")
-    _RE_LIPID_HEURISTIC = re.compile(br"(Myr|Lau|Dco|Ste|But|Cap|CER|Cer|LI|3HO|Vac|ALK|Und|lX|l\?|Gc|Et)")
-    _RE_AMINOACID_HEURISTIC = re.compile(br"(Ala|Ser|Thr|Gly|Lys|Asp|Glu)")
+    _RE_POLYMER_DONOR = re.compile(rb"\(([0-9?]+)-?(P)?-?\s*$")
+    _RE_POLYMER_ACCEPTOR = re.compile(rb"^\s*-([0-9?P-]+)\)")
+    _RE_PERCENTAGES = re.compile(rb"\d*%+")
+    _RE_FUZZY_OR = re.compile(rb"<<([^|>]+)[^>]*>>")
+    _RE_DANGLING_CAP = re.compile(rb"^-\d+\)")
+    _RE_COMMENT = re.compile(rb"\s*//.*$")
+    _RE_NEU = re.compile(rb"^(Neu)([pf]?)")
+    _RE_LIPID_HEURISTIC = re.compile(rb"(Myr|Lau|Dco|Ste|But|Cap|CER|Cer|LI|3HO|Vac|ALK|Und|lX|l\?|Gc|Et)")
+    _RE_AMINOACID_HEURISTIC = re.compile(rb"(Ala|Ser|Thr|Gly|Lys|Asp|Glu)")
 
     def _strip(self, sequence: bytes) -> tuple[bytes, int | None, int | None]:
         seq = sequence
         seq = self._RE_COMMENT.sub(b"", seq).strip()
         seq = self._RE_PERCENTAGES.sub(b"", seq)
-        seq = self._RE_FUZZY_OR.sub(br"\1", seq)
+        seq = self._RE_FUZZY_OR.sub(rb"\1", seq)
 
         donor = None
         donor_match = self._RE_POLYMER_DONOR.search(seq)
         if donor_match:
             d_chars = donor_match.group(1)
             donor = (d_chars[0] - 48) if (d_chars and 49 <= d_chars[0] <= 57) else 0
-            seq = seq[:donor_match.start()].strip()
+            seq = seq[: donor_match.start()].strip()
 
         acceptor = None
         acc_match = self._RE_POLYMER_ACCEPTOR.search(seq)
         if acc_match:
             a_chars = acc_match.group(1)
             acceptor = (a_chars[0] - 48) if (a_chars and 49 <= a_chars[0] <= 57) else 0
-            seq = seq[acc_match.end():].strip()
+            seq = seq[acc_match.end() :].strip()
 
         # Clever comma replace
         res = bytearray()
@@ -67,11 +67,11 @@ class CSDBParser(GlycanParser):
         def _parse_c(b_char: int) -> int:
             return (b_char - 48) if 49 <= b_char <= 57 else 0
 
-        if b':' in link:
-            parts = link.split(b':')
-            donor = _parse_c(parts[0].split(b'-')[0][0])
-            c1 = _parse_c(parts[0].split(b'-')[1][0])
-            c2 = _parse_c(parts[1].split(b'-')[1][0])
+        if b":" in link:
+            parts = link.split(b":")
+            donor = _parse_c(parts[0].split(b"-")[0][0])
+            c1 = _parse_c(parts[0].split(b"-")[1][0])
+            c2 = _parse_c(parts[1].split(b"-")[1][0])
             return donor, (c1, c2)
         donor = _parse_c(link[0])
         acceptor = _parse_c(link[-1])
@@ -97,8 +97,9 @@ class CSDBParser(GlycanParser):
             self.mono_map[b"Mur"]: self.mono_map[b"MurNAc"],
         }
 
-    def _parse_monosaccharide(self, node: bytes, strict: bool = False) -> tuple[
-        Anomer, ResidueType | None, list[Substitution]]:
+    def _parse_monosaccharide(
+        self, node: bytes, strict: bool = False
+    ) -> tuple[Anomer, ResidueType | None, list[Substitution]]:
         if node.startswith(b"*"):
             node = node.lstrip(b"*")
         if node.startswith(b"-"):
@@ -114,7 +115,7 @@ class CSDBParser(GlycanParser):
         is_false_mod = False
         if mod_match:
             mod_str = mod_match.group(1)
-            prefix = node[:mod_match.start()]
+            prefix = node[: mod_match.start()]
             if mod_str == b"N":
                 is_false_mod = True
             elif mod_str in (b"Ac", b"OAc") and (
@@ -135,7 +136,7 @@ class CSDBParser(GlycanParser):
 
         if mod_match and not is_false_mod:
             mod_str = mod_match.group(1)
-            prefix = node[:mod_match.start()]
+            prefix = node[: mod_match.start()]
             if not prefix or prefix.strip(b"ab?DxXRSldrs ") == b"":
                 return Anomer.UNKNOWN, None, [Substitution(self.mod_map[mod_str])]
             subs.append(Substitution(self.mod_map[mod_str]))
@@ -147,26 +148,26 @@ class CSDBParser(GlycanParser):
             if base_str in self.mono_map:
                 base_mono = self.mono_map[base_str]
                 nat_chi = Chirality(Sugars.natural_chirality[base_mono])
-                return Anomer.UNKNOWN, ResidueType.from_sugar(base_mono, nat_chi, base_str.endswith(b'f')), subs
+                return Anomer.UNKNOWN, ResidueType.from_sugar(base_mono, nat_chi, base_str.endswith(b"f")), subs
 
         anomer = Anomer.UNKNOWN
         chirality = Chirality.UNKNOWN
         idx = 0
 
         # 1. Anomer prefix (a, b, ?, x, or a?, b?)
-        if idx < len(node) and node[idx] in (b'a'[0], b'b'[0], b'?'[0], b'x'[0]):
-            if node[idx] == b'a'[0]:
+        if idx < len(node) and node[idx] in (b"a"[0], b"b"[0], b"?"[0], b"x"[0]):
+            if node[idx] == b"a"[0]:
                 anomer = Anomer.ALPHA
-            elif node[idx] == b'b'[0]:
+            elif node[idx] == b"b"[0]:
                 anomer = Anomer.BETA
             idx += 1
-            if idx < len(node) and node[idx] == b'?'[0] and (idx + 1 < len(node) and not (48 <= node[idx + 1] <= 57)):
+            if idx < len(node) and node[idx] == b"?"[0] and (idx + 1 < len(node) and not (48 <= node[idx + 1] <= 57)):
                 idx += 1
-            if idx < len(node) and node[idx] == b'-'[0]:
+            if idx < len(node) and node[idx] == b"-"[0]:
                 idx += 1
 
         # 2. Chirality prefix (D, L, l, d, X, x, R, S, r, s, and possible trailing ?)
-        chi_chars = (b'D'[0], b'L'[0], b'l'[0], b'd'[0], b'?'[0], b'x'[0], b'X'[0], b'R'[0], b'S'[0], b'r'[0], b's'[0])
+        chi_chars = (b"D"[0], b"L"[0], b"l"[0], b"d"[0], b"?"[0], b"x"[0], b"X"[0], b"R"[0], b"S"[0], b"r"[0], b"s"[0])
         protected_sugar_prefixes = (
             b"rib",
             b"rha",
@@ -188,22 +189,22 @@ class CSDBParser(GlycanParser):
         )
         if idx < len(node) and node[idx] in chi_chars and not node[idx:].lower().startswith(protected_sugar_prefixes):
             first_chi = node[idx]
-            if first_chi in (b'D'[0], b'd'[0]):
+            if first_chi in (b"D"[0], b"d"[0]):
                 chirality = Chirality.D
-            elif first_chi in (b'L'[0], b'l'[0]):
+            elif first_chi in (b"L"[0], b"l"[0]):
                 chirality = Chirality.L
             idx += 1
             # Check for compound acyl stereodescriptors (e.g. lS, lR, lX, rS, rR, xS, xR)
-            if first_chi in (b'l'[0], b'r'[0], b'x'[0], b'X'[0]):
-                if idx < len(node) and node[idx] in (b'S'[0], b'R'[0], b's'[0], b'r'[0], b'X'[0], b'x'[0], b'?'[0]):
-                    if node[idx] in (b'S'[0], b's'[0]) and chirality == Chirality.UNKNOWN:
+            if first_chi in (b"l"[0], b"r"[0], b"x"[0], b"X"[0]):
+                if idx < len(node) and node[idx] in (b"S"[0], b"R"[0], b"s"[0], b"r"[0], b"X"[0], b"x"[0], b"?"[0]):
+                    if node[idx] in (b"S"[0], b"s"[0]) and chirality == Chirality.UNKNOWN:
                         chirality = Chirality.L
-                    elif node[idx] in (b'R'[0], b'r'[0]) and chirality == Chirality.UNKNOWN:
+                    elif node[idx] in (b"R"[0], b"r"[0]) and chirality == Chirality.UNKNOWN:
                         chirality = Chirality.D
                     idx += 1
-            elif idx < len(node) and node[idx] == b'?'[0]:
+            elif idx < len(node) and node[idx] == b"?"[0]:
                 idx += 1
-            if idx < len(node) and node[idx] == b'-'[0]:
+            if idx < len(node) and node[idx] == b"-"[0]:
                 idx += 1
 
         core_sugar = node[idx:]
@@ -228,8 +229,12 @@ class CSDBParser(GlycanParser):
             else:
                 sugar_idx = self.mono_map[b"ExoticSugar"]
                 generic_name = "ExoticSugar"
-            warnings.warn(f"Unknown CSDB sugar base '{core_sugar.decode(errors='replace')}'. "
-                          f"Falling back to generic '{generic_name}'.", GlycanParseWarning)
+            warnings.warn(
+                f"Unknown CSDB sugar base '{core_sugar.decode(errors='replace')}'. "
+                f"Falling back to generic '{generic_name}'.",
+                GlycanParseWarning,
+                stacklevel=2,
+            )
         else:
             sugar_idx = self.mono_map[mono_match.group(1)]
         if chirality == Chirality.UNKNOWN:
@@ -299,9 +304,13 @@ class CSDBParser(GlycanParser):
                                 mod_node_id = len(monosaccharides)
                                 monosaccharides.append(ResidueType.from_sugar(sub.modifier, Chirality.UNKNOWN, False))
                                 for carbon in rem_carbons:
-                                    edges.append(LinkageEdge(source=mod_node_id, target=active_node_id,
-                                                             edge_type=LinkageType(Anomer.UNKNOWN, pending_donor or 0,
-                                                                                   carbon)))
+                                    edges.append(
+                                        LinkageEdge(
+                                            source=mod_node_id,
+                                            target=active_node_id,
+                                            edge_type=LinkageType(Anomer.UNKNOWN, pending_donor or 0, carbon),
+                                        )
+                                    )
                         pending_donor = None
                         pending_acceptors = None
                 else:
@@ -316,8 +325,13 @@ class CSDBParser(GlycanParser):
                         mod_node_id = len(monosaccharides)
                         monosaccharides.append(ResidueType.from_sugar(sub.modifier, Chirality.UNKNOWN, False))
                         for carbon in sub.carbons:
-                            edges.append(LinkageEdge(source=mod_node_id, target=new_node_id,
-                                                     edge_type=LinkageType(Anomer.UNKNOWN, 0, carbon)))
+                            edges.append(
+                                LinkageEdge(
+                                    source=mod_node_id,
+                                    target=new_node_id,
+                                    edge_type=LinkageType(Anomer.UNKNOWN, 0, carbon),
+                                )
+                            )
 
                     if pending_donor is not None and pending_acceptors and active_node_id is not None:
                         link = LinkageType(anomer, donor=pending_donor, acceptor=pending_acceptors[0])
@@ -338,4 +352,3 @@ class CSDBParser(GlycanParser):
             edges.append(LinkageEdge(source=0, target=active_node_id, edge_type=link_type))
 
         return Glycan(canonical=sequence, nodes=tuple(monosaccharides), edges=tuple(edges))
-

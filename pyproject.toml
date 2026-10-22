@@ -82,16 +82,37 @@ packages = ["src/kbank"]
 
 [tool.ruff]
 line-length = 120
-exclude = [".agents", ".git", ".venv", "__pycache__", "src/kbank/_version.py"]
+force-exclude = true
+exclude = [
+    ".agents",
+    ".git",
+    ".venv",
+    "__pycache__",
+    "src/kbank/_version.py",
+]
 target-version = "py314"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "D"]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+]
 extend-select = ["ANN", "PYI"]
+ignore = [
+    "ANN401",
+    "E501",
+] # Formatting handles line length
 preview = true
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/*.py" = ["ANN", "B018"]
 
 [tool.ruff.format]
 quote-style = "double"

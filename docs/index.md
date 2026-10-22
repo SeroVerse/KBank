@@ -1,18 +1,31 @@
-# KBank
+---
+title: KBank
+subtitle: Structural Glycomics & De Novo Prediction
+description: Bacterial surface glycan database, bipartite biosynthetic gene-to-glycan alignment, and Relational MPNN de novo polysaccharide structure prediction.
+author: Tom Stanton
+icon: lucide/hexagon
+comments: true
+tags:
+  - glycomics
+  - polysaccharides
+  - mpnn
+  - biosynthesis
+  - csdb
+hide:
+  - navigation
+---
 
 <div class="sv-hero" markdown>
 
-<div class="sv-hero-eyebrow" markdown="span">:lucide-hexagon: SeroVerse · Geno-Glycomic Engine</div>
-
 # KBank
 
-**Neuro-symbolic bacterial glycan database, biosynthetic gene-to-glycan alignment, and *de novo* polysaccharide structure prediction.**
+**Bacterial surface glycan database, biosynthetic gene-to-glycan alignment, and *de novo* polysaccharide structure prediction.**
 
-Built on Structure-of-Arrays (SoA) Compressed Sparse Row (CSR) chemical graphs and Numba-accelerated message-passing kernels, **KBank** bridges [`SeroGen`](https://seroverse.github.io/SeroGen/) biosynthetic gene cluster predictions directly to chemical polysaccharide structures (`CSDB` / `IUPAC` / RDKit `Mol`).
+Built on Structure-of-Arrays (SoA) Compressed Sparse Row (CSR) chemical graphs and Numba-accelerated message-passing kernels, **KBank** bridges [`SeroGen`](https://seroverse.github.io/SeroGen/) biosynthetic gene cluster predictions directly to chemical polysaccharide structures (`CSDB` / `IUPAC` / `KEGG KCF`).
 
 <div class="sv-badges">
   <img class="off-glb" src="https://img.shields.io/badge/python-3.14%2B-10b981?logo=python&logoColor=white" alt="Python 3.14+" />
-  <img class="off-glb" src="https://img.shields.io/badge/records-1%2C514%20Glycan--Locus%20Pairs-059669" alt="1,514 Curated Records" />
+  <img class="off-glb" src="https://img.shields.io/badge/records-1%2C530%20Glycan--Locus%20Pairs-059669" alt="1,530 Curated Records" />
   <img class="off-glb" src="https://img.shields.io/badge/engine-MPNN%20%2B%20Arborescence-d97706" alt="Relational MPNN" />
   <img class="off-glb" src="https://img.shields.io/badge/license-GPLv3-6366f1" alt="GPLv3 License" />
 </div>
@@ -29,25 +42,25 @@ Built on Structure-of-Arrays (SoA) Compressed Sparse Row (CSR) chemical graphs a
 
     ---
 
-    Provides **1,514** curated bacterial polysaccharide structures (`CSDB` and `IUPAC` Linear) paired with complete biosynthetic gene clusters and MCL protein homology families across *Klebsiella*, *Acinetobacter*, *Escherichia*, *Salmonella*, *Streptococcus*, and *Pseudomonas*.
+    Provides **1,530** curated bacterial polysaccharide structures (`CSDB`, `IUPAC` Linear, and `KEGG KCF`) paired with complete biosynthetic gene clusters and MCL protein homology families across *Klebsiella*, *Acinetobacter*, *Escherichia*, *Salmonella*, *Streptococcus*, and *Pseudomonas*.
 
 -   :lucide-hexagon: **CSR Directed Glycan Graphs (`kbank.glycan`, `kbank.sugars`)**
 
     ---
 
-    Represents repeating-unit oligosaccharides and modifications inside contiguous SoA CSR arrays with root-invariant topological hashing, Weisfeiler-Lehman graph kernels, and direct CSDB/IUPAC parsing and serialization.
+    Represents repeating-unit oligosaccharides and modifications inside contiguous SoA CSR arrays with root-invariant topological hashing, Weisfeiler-Lehman graph kernels, and direct `CSDB` / `IUPAC` / `KEGG KCF` parsing and serialization.
 
 -   :lucide-git-compare: **Bipartite Gene-to-Glycan Alignment (`kbank.biosynthesis.align`)**
 
     ---
 
-    Maps individual glycosyltransferases, acetyl/pyruvyltransferases, and `Wzy` polymerases onto specific sugar linkages via `BiosyntheticAligner` and `PanGraphConsensusPrior` Expectation-Maximization homology priors.
+    Maps individual glycosyltransferases, acetyl/pyruvyltransferases, and `Wzy` polymerases onto specific sugar linkages via `BiosyntheticAssigner` and `PanGraphConsensusPrior` Expectation-Maximization homology priors.
 
--   :lucide-network: **Neuro-Symbolic *De Novo* Structure Prediction (`kbank.biosynthesis.predictor`)**
+-   :lucide-network: ***De Novo* Polysaccharide Structure Prediction (`kbank.biosynthesis.predictor`)**
 
     ---
 
-    Combines Operon Precursor Pool gating, factorized 1D-CNN enzyme classifiers (`BiosyntheticClassifierSuite`), a 2-layer Relational Message-Passing GNN (`RelationalMPNN`), and a branch-and-bound Constrained Spanning Arborescence solver (`GlycanPredictor`).
+    Combines Operon Precursor Pool gating, factorized 1D-CNN enzyme classifiers (`BiosyntheticClassifierSuite`), a Relational Message-Passing GNN (`RelationalMPNN`), and a branch-and-bound Constrained Spanning Arborescence solver (`GlycanPredictor`).
 
 </div>
 
@@ -59,9 +72,9 @@ Built on Structure-of-Arrays (SoA) Compressed Sparse Row (CSR) chemical graphs a
 flowchart LR
     LOC["<b>Segmented BGC Locus</b><br/><i>SeroGen LocusPredictor</i>"]
     CLS["<b>Factorized 1D-CNN Suite</b><br/><i>GT Donor, Mechanism &amp; Wzy</i>"]
-    ALN["<b>Bipartite EM Aligner</b><br/><i>BiosyntheticAligner + PanGraph Prior</i>"]
+    ALN["<b>Bipartite EM Aligner</b><br/><i>BiosyntheticAssigner + PanGraph Prior</i>"]
     MPNN["<b>Relational MPNN + Arborescence</b><br/><i>GlycanPredictor De Novo Solver</i>"]
-    GLY["<b>Directed Glycan Graph</b><br/><i>CSDB / IUPAC / RDKit Mol</i>"]
+    GLY["<b>Directed Glycan Graph</b><br/><i>CSDB / IUPAC / KEGG KCF</i>"]
 
     LOC --> CLS --> ALN --> MPNN --> GLY
 ```

@@ -1,8 +1,8 @@
 """Structure-of-Arrays (SoA) batch container for bacterial glycan records and paired biosynthetic loci."""
 
+import os
 from collections.abc import AsyncIterable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field, replace
-import os
 from pathlib import Path
 from typing import Any, Self, overload
 
@@ -18,12 +18,11 @@ from serogen.loci.models import Loci, Locus
 from kbank.biosynthesis.align import BiosyntheticAssigner, GeneGlycanAssignments, PanGraphConsensusPrior
 from kbank.db.models import GlycanRecord
 from kbank.glycan import Glycan, Glycans
-from kbank.sugars import Sugars
 
 DEFAULT_DB_PATH: Path = Path(__file__).resolve().parent.parent / "data" / "glycans.npz"
 
 
-def _loci_to_npz_dict(loci: Loci, prefix: str = "locus_") -> dict[str, np.ndarray]:
+def _loci_to_npz_dict(loci: Loci, prefix: str = "locus_") -> dict[str, Any]:
     """Serialize a `Loci` SoA batch (and its embedded `Genes`) into a flat `.npz`-ready dictionary."""
     g = loci.genes
     return {
@@ -176,21 +175,13 @@ class GlycanRecords(BatchedContainer[GlycanRecord, "GlycanRecords"]):
     glycans: Glycans
     loci: Loci
     assignments: GeneGlycanAssignments
-    structure_raws: np.ndarray[tuple[int], np.dtype[np.bytes_]] = field(
-        default_factory=lambda: np.empty(0, dtype="S1")
-    )
+    structure_raws: np.ndarray[tuple[int], np.dtype[np.bytes_]] = field(default_factory=lambda: np.empty(0, dtype="S1"))
     structure_linears: np.ndarray[tuple[int], np.dtype[np.bytes_]] = field(
         default_factory=lambda: np.empty(0, dtype="S1")
     )
-    dois: np.ndarray[tuple[int], np.dtype[np.bytes_]] = field(
-        default_factory=lambda: np.empty(0, dtype="S1")
-    )
-    glytoucan_ids: np.ndarray[tuple[int], np.dtype[np.bytes_]] = field(
-        default_factory=lambda: np.empty(0, dtype="S1")
-    )
-    notes: np.ndarray[tuple[int], np.dtype[np.bytes_]] = field(
-        default_factory=lambda: np.empty(0, dtype="S1")
-    )
+    dois: np.ndarray[tuple[int], np.dtype[np.bytes_]] = field(default_factory=lambda: np.empty(0, dtype="S1"))
+    glytoucan_ids: np.ndarray[tuple[int], np.dtype[np.bytes_]] = field(default_factory=lambda: np.empty(0, dtype="S1"))
+    notes: np.ndarray[tuple[int], np.dtype[np.bytes_]] = field(default_factory=lambda: np.empty(0, dtype="S1"))
 
     def __post_init__(self) -> None:
         n = len(self.source_dbs)
@@ -224,6 +215,12 @@ class GlycanRecords(BatchedContainer[GlycanRecord, "GlycanRecords"]):
 
     @overload
     def __getitem__(self, item: slice | np.ndarray[tuple[int], Any] | Sequence[Any]) -> Self: ...
+
+    @overload
+    def __getitem__(
+        self,
+        item: int | np.integer[Any] | slice | np.ndarray[tuple[int], Any] | Sequence[Any],
+    ) -> GlycanRecord | Self: ...
 
     def __getitem__(
         self,
@@ -264,7 +261,7 @@ class GlycanRecords(BatchedContainer[GlycanRecord, "GlycanRecords"]):
             )
 
         if isinstance(item, slice):
-            return GlycanRecords(
+            return type(self)(
                 source_dbs=self.source_dbs[item],
                 record_ids=self.record_ids[item],
                 organisms=self.organisms[item],
@@ -292,7 +289,7 @@ class GlycanRecords(BatchedContainer[GlycanRecord, "GlycanRecords"]):
         if arr_item.dtype == bool:
             if len(arr_item) != len(self):
                 raise ValueError(f"Mask length {len(arr_item)} does not match batch length {len(self)}.")
-            return GlycanRecords(
+            return type(self)(
                 source_dbs=self.source_dbs[arr_item],
                 record_ids=self.record_ids[arr_item],
                 organisms=self.organisms[arr_item],
@@ -320,7 +317,7 @@ class GlycanRecords(BatchedContainer[GlycanRecord, "GlycanRecords"]):
             indices = self._normalize_indices(arr_item)
             if len(indices) == 0:
                 return self.empty()
-            return GlycanRecords(
+            return type(self)(
                 source_dbs=self.source_dbs[indices],
                 record_ids=self.record_ids[indices],
                 organisms=self.organisms[indices],
@@ -842,83 +839,3 @@ class GlycanRecords(BatchedContainer[GlycanRecord, "GlycanRecords"]):
     def pretrained(cls, path: Path | str | None = None) -> Self:
         r"""Loads the bundled curated `GlycanRecords` database (`src/kbank/data/glycans.npz`)."""
         return cls.load(path=path)
-
-    def to_arrow(self) -> object:
-        r"""Exports the `GlycanRecords` batch as a `pyarrow.Table`."""
-        import pyarrow as pa
-
-        rows: list[dict[str, Any]] = []
-        for r in self:
-            g = r.glycan
-            loc = r.locus
-            sugar_names: list[str] = []
-            n_nodes = 0
-            n_edges = 0
-            if g is not None and len(g.nodes) > 0:
-                n_nodes = len(g.nodes)
-                n_edges = len(g.edges)
-                sugar_names = [
-                    Sugars.names[node.sugar].decode("ascii", errors="replace")
-                    for node in g.nodes
-                    if not node.is_modifier
-                ]
-            assign_structs = [
-                {
-                    "gene_index": int(a.gene_index),
-                    "role": a.role.name,
-                    "role_abbrev": a.role.abbreviation,
-                    "target_type": a.target_type.value,
-                    "target_index": int(a.target_index),
-                    "bipartite_index": int(a.bipartite_glycan_index),
-                    "component": a.component_label,
-                    "evidence": a.evidence.name,
-                    "score": float(a.score),
-                }
-                for a in r.assignments
-            ]
-            rows.append(
-                {
-                    "compound_key": r.compound_key.decode("utf-8", errors="replace"),
-                    "source_db": r.source_db.decode("utf-8", errors="replace"),
-                    "record_id": r.record_id.decode("utf-8", errors="replace"),
-                    "organism": r.organism.decode("utf-8", errors="replace"),
-                    "strain": r.strain.decode("utf-8", errors="replace"),
-                    "serotype": r.serotype.decode("utf-8", errors="replace"),
-                    "antigen_type": r.antigen_type.decode("utf-8", errors="replace"),
-                    "assembly_id": r.assembly_id.decode("utf-8", errors="replace"),
-                    "archetype": r.archetype.name,
-                    "archetype_category": r.archetype.category.value,
-                    "has_locus": r.has_locus,
-                    "locus_num_genes": len(loc.nodes) if loc is not None else 0,
-                    "locus_completeness": float(loc.completeness) if loc is not None else 0.0,
-                    "locus_score": float(loc.score) if loc is not None else 0.0,
-                    "alignment_score": float(r.alignment_score),
-                    "num_assignments": r.num_assignments,
-                    "num_aligned_assignments": r.num_aligned_assignments,
-                    "num_rule_assignments": r.num_rule_assignments,
-                    "gene_glycan_assignments": r.format_assignments(),
-                    "assignments": assign_structs,
-                    "num_residues": len(sugar_names),
-                    "num_nodes": n_nodes,
-                    "num_linkages": n_edges,
-                    "monosaccharides": ", ".join(sugar_names),
-                    "is_repeating": bool(r.is_repeating),
-                    "structure_linear": r.structure_linear.decode("utf-8", errors="replace"),
-                    "structure_raw": r.structure_raw.decode("utf-8", errors="replace"),
-                    "pmid": int(r.pmid),
-                    "publication_year": int(r.publication_year),
-                    "doi": r.doi.decode("utf-8", errors="replace"),
-                    "glytoucan_id": r.glytoucan_id.decode("utf-8", errors="replace"),
-                    "notes": r.notes.decode("utf-8", errors="replace"),
-                }
-            )
-        return pa.Table.from_pylist(rows)
-
-    def to_parquet(self, path: Path | str) -> Path:
-        r"""Writes the `GlycanRecords` batch to a Parquet file via `pyarrow.parquet`."""
-        import pyarrow.parquet as pq
-
-        p = Path(path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        pq.write_table(self.to_arrow(), p, compression="zstd")
-        return p

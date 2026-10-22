@@ -1,7 +1,7 @@
 [project]
 site_url = "https://seroverse.github.io/kbank/"
 site_name = "KBank"
-site_description = "Neuro-symbolic bacterial glycan database, biosynthetic gene-to-glycan aligner, and de novo structure predictor"
+site_description = "Bacterial surface glycan database, biosynthetic gene-to-glycan aligner, and de novo structure predictor"
 site_author = "Tom Stanton"
 copyright = "Copyright &copy; 2026 Tom Stanton — SeroVerse"
 
@@ -25,6 +25,11 @@ nav = [
     { "kbank.glycan & sugars" = "reference/glycan.md" },
     { "kbank.db & io" = "reference/db.md" },
     { "kbank.biosynthesis" = "reference/biosynthesis.md" },
+  ] },
+  { "Community" = [
+    "conduct.md",
+    "contributing.md",
+    "releases.md",
   ] },
 ]
 
@@ -93,7 +98,14 @@ icon = "fontawesome/brands/github"
 link = "https://github.com/seroverse/kbank"
 name = "SeroVerse/KBank on GitHub"
 
+[project.extra.status]
+new = "Recently added"
+deprecated = "Deprecated"
+
 [project.plugins.search]
+enabled = true
+
+[project.plugins.tags]
 enabled = true
 
 [project.plugins.autorefs]
@@ -107,7 +119,7 @@ enabled = true
 
 [project.plugins.llmstxt]
 enabled = true
-markdown_description = "KBank: Neuro-symbolic bacterial glycan database, CSDB/IUPAC chemical graph engine, bipartite enzyme-to-linkage aligner, and Relational MPNN de novo polysaccharide structure predictor."
+markdown_description = "KBank: Bacterial surface glycan database, CSDB/IUPAC/KEGG chemical graph engine, bipartite enzyme-to-linkage aligner, and Relational MPNN de novo polysaccharide structure predictor."
 full_output = "llms-full.txt"
 
 [project.plugins.llmstxt.sections]
@@ -124,7 +136,12 @@ full_output = "llms-full.txt"
 "API Reference" = [
   { "reference/glycan.md" = "kbank.glycan and kbank.sugars: CSR glycan graphs, monosaccharide registry, and stereochemistry" },
   { "reference/db.md" = "kbank.db and kbank.io: Curated glycan-locus records and CSDB/IUPAC/KEGG parsers" },
-  { "reference/biosynthesis.md" = "kbank.biosynthesis: BiosyntheticAligner, BiosyntheticClassifierSuite, and GlycanPredictor" },
+  { "reference/biosynthesis.md" = "kbank.biosynthesis: BiosyntheticAssigner, BiosyntheticClassifierSuite, and GlycanPredictor" },
+]
+"Community" = [
+  { "conduct.md" = "Contributor Covenant Code of Conduct" },
+  { "contributing.md" = "Local development setup, testing, and pull request guidelines" },
+  { "releases.md" = "Version history and changelog" },
 ]
 
 [project.plugins.mkdocstrings]
@@ -172,6 +189,7 @@ pymdownx.keys = {}
 pymdownx.magiclink = {}
 pymdownx.mark = {}
 pymdownx.smartsymbols = {}
+pymdownx.snippets = { base_path = ["."] }
 pymdownx.superfences.custom_fences = [
   { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
 ]

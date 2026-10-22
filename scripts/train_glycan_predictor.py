@@ -16,7 +16,7 @@
 # serogen = { path = "../../SeroGen", editable = true }
 # ///
 
-"""Marimo slide deck & Two-Phase Optuna TPE tuning for KBank's 4-Stage Neuro-Symbolic GlycanPredictor."""
+"""Marimo slide deck & Two-Phase Optuna TPE tuning for KBank's 4-Stage GlycanPredictor."""
 
 import marimo
 
@@ -31,9 +31,9 @@ app = marimo.App(
 @app.cell
 def _():
     import os
-    from pathlib import Path
     import time
     import urllib.request
+    from pathlib import Path
 
     import altair as alt
     import marimo as mo
@@ -320,7 +320,9 @@ def _(
     ) -> list[tuple[np.ndarray, RelationalCSR, RelationalCSR, np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
         """Pre-extract `(x_nodes, csr_2hop, csr_1hop, node_targets, node_weights, parent_targets, slot_targets)` graphs."""
         dl_to_idx = {int(c): idx for idx, c in enumerate(dl_classes)}
-        graphs: list[tuple[np.ndarray, RelationalCSR, RelationalCSR, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
+        graphs: list[
+            tuple[np.ndarray, RelationalCSR, RelationalCSR, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+        ] = []
 
         for i in indices:
             loc = records.loci[i]
@@ -360,9 +362,7 @@ def _(
             has_genes = len(loc.genes) > 0
             translations = loc.genes.translations if has_genes else ()
             init_aa = (
-                bytes(translations[init_g_idx].seq)
-                if (has_genes and 0 <= init_g_idx < len(translations))
-                else b""
+                bytes(translations[init_g_idx].seq) if (has_genes and 0 <= init_g_idx < len(translations)) else b""
             )
             slot_seqs: list[bytes] = [init_aa]
             for g_i in gt_g_indices:
@@ -435,7 +435,9 @@ def _(
 
     def evaluate_mpnn_on_graphs(
         mpnn: RelationalMPNN,
-        val_graphs: list[tuple[np.ndarray, RelationalCSR, RelationalCSR, np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+        val_graphs: list[
+            tuple[np.ndarray, RelationalCSR, RelationalCSR, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+        ],
         include_2hop: bool,
     ) -> dict[str, float]:
         """Evaluate `RelationalMPNN` on held-out validation arborescence graphs."""
@@ -493,7 +495,9 @@ def _(
         }
 
     def train_single_mpnn(
-        train_graphs: list[tuple[np.ndarray, RelationalCSR, RelationalCSR, np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+        train_graphs: list[
+            tuple[np.ndarray, RelationalCSR, RelationalCSR, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+        ],
         num_node_classes: int,
         *,
         hidden_dim: int,
@@ -890,7 +894,6 @@ def _(
     GlycanRecords,
     LocusArchetype,
     LocusPredictor,
-    Path,
     alt,
     bigram_counts,
     composition_counts,
@@ -1095,15 +1098,9 @@ def _(
         random_state=42,
     )
 
-    test_cv_metrics = evaluate_predictor_subset(
-        test_eval_predictor, records, test_indices, regime="cross_val"
-    )
-    test_dn_metrics = evaluate_predictor_subset(
-        test_eval_predictor, records, test_indices, regime="de_novo"
-    )
-    test_loo_metrics = evaluate_predictor_subset(
-        test_eval_predictor, records, test_indices, regime="leave_one_out"
-    )
+    test_cv_metrics = evaluate_predictor_subset(test_eval_predictor, records, test_indices, regime="cross_val")
+    test_dn_metrics = evaluate_predictor_subset(test_eval_predictor, records, test_indices, regime="de_novo")
+    test_loo_metrics = evaluate_predictor_subset(test_eval_predictor, records, test_indices, regime="leave_one_out")
 
     # Fit production predictor on all records with the Optuna-best hyperparameters
     prod_predictor = GlycanPredictor.from_records(
@@ -1133,12 +1130,8 @@ def _(
 
     # Out-of-Sample Klebsiella pneumoniae KL106 (LT174576.1) -> K106 and KL107 (KF793263.1) -> K107 Evaluation
     parser = CSDBParser()
-    k106_true = parser.parse(
-        b"-3)[bDGlcp(1-6)aDGlcp(1-4)bDGlcpA(1-6)aDGlcp(1-4),Ac(1-6)]bDGalp(1-4)bDGlcp(1-"
-    )
-    k107_true = parser.parse(
-        b"-3)bDGalpA(1-2)aLRhap(1-2)[aLRhap(1-4)]aLRhap(1-2)aLRhap(1-3)bDGalp(1-"
-    )
+    k106_true = parser.parse(b"-3)[bDGlcp(1-6)aDGlcp(1-4)bDGlcpA(1-6)aDGlcp(1-4),Ac(1-6)]bDGalp(1-4)bDGlcp(1-")
+    k107_true = parser.parse(b"-3)bDGalpA(1-2)aLRhap(1-2)[aLRhap(1-4)]aLRhap(1-2)aLRhap(1-3)bDGalp(1-")
 
     lp = LocusPredictor(min_completeness=0.50, stitch_contig_splits=False)
     kl_benchmarks: list[dict[str, object]] = []
@@ -1158,9 +1151,7 @@ def _(
             _p1 = _preds[0].glycan
             _t1_iso = bool(_p1.is_isomorphic(_true_g))
             _t5_iso = any(p.glycan.is_isomorphic(_true_g) for p in _preds)
-            _c1_iso = bool(
-                core_monosaccharide_glycan(_p1).is_isomorphic(core_monosaccharide_glycan(_true_g))
-            )
+            _c1_iso = bool(core_monosaccharide_glycan(_p1).is_isomorphic(core_monosaccharide_glycan(_true_g)))
             _wwl = 0.0 if _t1_iso else wwl_pair_distance(_p1, _true_g)
             _cf1 = multiset_f1(composition_counts(_p1), composition_counts(_true_g))
             _bf1 = multiset_f1(bigram_counts(_p1), bigram_counts(_true_g))
@@ -1382,7 +1373,7 @@ def _(
         [
             mo.md(
                 """
-                # `GlycanPredictor` — 4-Stage Neuro-Symbolic GNN & Constrained Arborescence Assembly
+                # `GlycanPredictor` — 4-Stage GNN & Constrained Arborescence Assembly
                 Jointly optimizing **Stage 2 [`RelationalMPNN`][serogen.core.graph.gnn.RelationalMPNN]** message-passing over multi-hop CSR
                 operon graphs and **Stage 3/4 Constrained Arborescence Potentials (`GlycanPredictorParams`)** via Two-Phase Optuna TPE.
                 """
@@ -1464,7 +1455,7 @@ def _(alt, mo, p2_hist_chart, p2_imp_chart):
             mo.md(
                 """
                 ## 2. Phase 2 Optuna TPE Study: Stage 3/4 Arborescence Potential Blending (`GlycanPredictorParams`)
-                Jointly optimizing all 14 neuro-symbolic node and directed edge potentials across Cross-Validated (`65%`)
+                Jointly optimizing all 14 biochemical node and directed edge potentials across Cross-Validated (`65%`)
                 and Pure Sequence *De Novo* (`cluster_id=0`, `35%`) validation regimes.
                 """
             ),
@@ -1573,9 +1564,9 @@ def _(
     _reg_table = f"""
 | Evaluation Regime | Top-1 Exact Iso | Top-5 Exact Iso | Top-1 Core Iso | Top-5 Core Iso | Mean WWL Distance | Monosaccharide Comp F1 | Disaccharide Bigram F1 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| **1. Cross-Validated (Unseen Record)** | **{test_cv_metrics['top1_iso'] * 100:.1f}%** | **{test_cv_metrics['top5_iso'] * 100:.1f}%** | {test_cv_metrics['top1_core_iso'] * 100:.1f}% | {test_cv_metrics['top5_core_iso'] * 100:.1f}% | `{test_cv_metrics['mean_wwl']:.3f}` | {test_cv_metrics['comp_f1'] * 100:.1f}% | {test_cv_metrics['bigram_f1'] * 100:.1f}% |
-| **2. Pure Sequence *De Novo* (`cluster_id=0`)** | **{test_dn_metrics['top1_iso'] * 100:.1f}%** | **{test_dn_metrics['top5_iso'] * 100:.1f}%** | {test_dn_metrics['top1_core_iso'] * 100:.1f}% | {test_dn_metrics['top5_core_iso'] * 100:.1f}% | `{test_dn_metrics['mean_wwl']:.3f}` | {test_dn_metrics['comp_f1'] * 100:.1f}% | {test_dn_metrics['bigram_f1'] * 100:.1f}% |
-| **3. 1-Free GT Clamped Completion** | **{test_loo_metrics['top1_iso'] * 100:.1f}%** | **{test_loo_metrics['top5_iso'] * 100:.1f}%** | {test_loo_metrics['top1_core_iso'] * 100:.1f}% | {test_loo_metrics['top5_core_iso'] * 100:.1f}% | `{test_loo_metrics['mean_wwl']:.3f}` | {test_loo_metrics['comp_f1'] * 100:.1f}% | {test_loo_metrics['bigram_f1'] * 100:.1f}% |
+| **1. Cross-Validated (Unseen Record)** | **{test_cv_metrics["top1_iso"] * 100:.1f}%** | **{test_cv_metrics["top5_iso"] * 100:.1f}%** | {test_cv_metrics["top1_core_iso"] * 100:.1f}% | {test_cv_metrics["top5_core_iso"] * 100:.1f}% | `{test_cv_metrics["mean_wwl"]:.3f}` | {test_cv_metrics["comp_f1"] * 100:.1f}% | {test_cv_metrics["bigram_f1"] * 100:.1f}% |
+| **2. Pure Sequence *De Novo* (`cluster_id=0`)** | **{test_dn_metrics["top1_iso"] * 100:.1f}%** | **{test_dn_metrics["top5_iso"] * 100:.1f}%** | {test_dn_metrics["top1_core_iso"] * 100:.1f}% | {test_dn_metrics["top5_core_iso"] * 100:.1f}% | `{test_dn_metrics["mean_wwl"]:.3f}` | {test_dn_metrics["comp_f1"] * 100:.1f}% | {test_dn_metrics["bigram_f1"] * 100:.1f}% |
+| **3. 1-Free GT Clamped Completion** | **{test_loo_metrics["top1_iso"] * 100:.1f}%** | **{test_loo_metrics["top5_iso"] * 100:.1f}%** | {test_loo_metrics["top1_core_iso"] * 100:.1f}% | {test_loo_metrics["top5_core_iso"] * 100:.1f}% | `{test_loo_metrics["mean_wwl"]:.3f}` | {test_loo_metrics["comp_f1"] * 100:.1f}% | {test_loo_metrics["bigram_f1"] * 100:.1f}% |
 
 **Tuned `GlycanPredictorParams`**: `w_pan_dl={best_arb_params.w_pan_dl:.2f}`, `w_knn_gt={best_arb_params.w_knn_gt:.2f}`, `w_clf_dl={best_arb_params.w_clf_dl:.2f}`, `w_clf_factorized={best_arb_params.w_clf_factorized:.2f}`, `w_mpnn_dl_free={best_arb_params.w_mpnn_dl_free:.2f}`, `syntenic_msg_alpha={best_arb_params.syntenic_msg_alpha:.3f}`, `w_backbone_log={best_arb_params.w_backbone_log:.2f}`, `w_precursor_bonus={best_arb_params.w_precursor_bonus:.2f}`, `w_acceptor_prob={best_arb_params.w_acceptor_prob:.2f}`, `w_acceptor_motif={best_arb_params.w_acceptor_motif:.2f}`, `w_mpnn_edge={best_arb_params.w_mpnn_edge:.2f}`, `w_pan_acc_match={best_arb_params.w_pan_acc_match:.2f}`, `w_disac_bigram={best_arb_params.w_disac_bigram:.2f}`, `w_syntenic_step={best_arb_params.w_syntenic_step:.2f}`.
 """

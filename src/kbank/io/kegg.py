@@ -159,5 +159,5 @@ def parse_kegg_glycan_flatfile(
     parser = KEGGParser()
     try:
         return parser.parse(text, strict=False, record_id=record_id, allow_composition=allow_composition)
-    except (GlycanParseError, ValueError, KeyError, IndexError):
+    except GlycanParseError, ValueError, KeyError, IndexError:
         return None

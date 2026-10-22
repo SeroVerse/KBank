@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import gzip
+import os
+import re
+import time
 from collections import Counter, defaultdict
 from contextlib import nullcontext
 from dataclasses import replace
-import gzip
-import os
 from pathlib import Path
-import re
-import time
 from typing import Any
 
 import numpy as np
@@ -138,6 +138,7 @@ def record_rank_key(rec: GlycanRecord, is_oligomer_duplicate: bool = False) -> t
         b"KEGG": 1,
     }
     gly = rec.glycan
+    assert gly is not None
     intact_rep = int(rec.is_repeating and not gly.is_alditol and not is_oligomer_duplicate)
     backbone_len = len(gly.without_modifiers().nodes)
     return (
@@ -160,15 +161,17 @@ def merge_record_cluster(cluster: list[GlycanRecord]) -> GlycanRecord:
     if len(cluster) == 1:
         return cluster[0]
 
-    intact_backbones = [r for r in cluster if r.is_repeating and not r.glycan.is_alditol]
+    intact_backbones = [r for r in cluster if r.is_repeating and r.glycan is not None and not r.glycan.is_alditol]
     oligomer_flags: dict[int, bool] = {}
     for idx_a, rec_a in enumerate(cluster):
         is_olig = False
+        gly_a = rec_a.glycan
+        assert gly_a is not None
         for rec_b in intact_backbones:
-            if rec_a is not rec_b and len(rec_a.glycan.without_modifiers().nodes) > len(
-                rec_b.glycan.without_modifiers().nodes
-            ):
-                if rec_a.glycan.is_oligomer_of(rec_b.glycan):
+            gly_b = rec_b.glycan
+            assert gly_b is not None
+            if rec_a is not rec_b and len(gly_a.without_modifiers().nodes) > len(gly_b.without_modifiers().nodes):
+                if gly_a.is_oligomer_of(gly_b):
                     is_olig = True
                     break
         oligomer_flags[idx_a] = is_olig
@@ -183,9 +186,10 @@ def merge_record_cluster(cluster: list[GlycanRecord]) -> GlycanRecord:
 
     # Graft modifiers (OAc, Pyr, OMe, Fo, P, PEtn, GroP, DAla, Lac) from fragments/variants onto winner
     winner_gly = winner.glycan
+    assert winner_gly is not None
     all_grafted: list[bytes] = []
     for other in others:
-        if other.glycan.num_modifiers > 0:
+        if other.glycan is not None and other.glycan.num_modifiers > 0:
             winner_gly, grafted = winner_gly.graft_modifiers_from(other.glycan)
             for g_name in grafted:
                 if g_name not in all_grafted:
@@ -295,21 +299,25 @@ def consolidate_curated_records(records: list[GlycanRecord]) -> list[GlycanRecor
     for u_rec in untyped_records:
         absorbed = False
         u_fam = antigen_family(u_rec.antigen_type)
+        u_gly = u_rec.glycan
+        assert u_gly is not None
         for k in typed_by_org.get(u_rec.organism, []):
             rep = typed_reps[k]
+            rep_gly = rep.glycan
+            assert rep_gly is not None
             same_strain = bool(u_rec.strain and rep.strain and u_rec.strain == rep.strain)
             same_pmid = bool(u_rec.pmid > 0 and rep.pmid > 0 and u_rec.pmid == rep.pmid)
             same_fam = k[2] == u_fam
 
-            if same_fam and u_rec.glycan.is_isomorphic(rep.glycan, allow_wildcards=True):
+            if same_fam and u_gly.is_isomorphic(rep_gly, allow_wildcards=True):
                 typed_clusters[k].append(u_rec)
                 typed_reps[k] = merge_record_cluster(typed_clusters[k])
                 absorbed = True
                 break
             if (same_strain or same_pmid) and (
-                u_rec.glycan.is_isomorphic(rep.glycan, allow_wildcards=True)
-                or u_rec.glycan.is_subgraph_of(rep.glycan)
-                or (not u_rec.is_repeating and u_rec.glycan.is_oligomer_of(rep.glycan))
+                u_gly.is_isomorphic(rep_gly, allow_wildcards=True)
+                or u_gly.is_subgraph_of(rep_gly)
+                or (not u_rec.is_repeating and u_gly.is_oligomer_of(rep_gly))
             ):
                 typed_clusters[k].append(u_rec)
                 typed_reps[k] = merge_record_cluster(typed_clusters[k])
@@ -322,35 +330,40 @@ def consolidate_curated_records(records: list[GlycanRecord]) -> list[GlycanRecor
     for u_rec in remaining_untyped:
         untyped_by_org_fam[(u_rec.organism, antigen_family(u_rec.antigen_type))].append(u_rec)
 
+    def _untyped_sort_key(r: GlycanRecord) -> tuple[int, int, int, tuple[Any, ...]]:
+        g = r.glycan
+        assert g is not None
+        return (
+            int(r.is_repeating and not g.is_alditol),
+            len(g.without_modifiers().nodes),
+            g.num_modifiers,
+            record_rank_key(r),
+        )
+
     consolidated_untyped: list[GlycanRecord] = []
     for _, grp in untyped_by_org_fam.items():
-        grp_sorted = sorted(
-            grp,
-            key=lambda r: (
-                int(r.is_repeating and not r.glycan.is_alditol),
-                len(r.glycan.without_modifiers().nodes),
-                r.glycan.num_modifiers,
-                record_rank_key(r),
-            ),
-            reverse=True,
-        )
+        grp_sorted = sorted(grp, key=_untyped_sort_key, reverse=True)
         clusters: list[list[GlycanRecord]] = []
         for cand in grp_sorted:
             placed = False
+            cand_gly = cand.glycan
+            assert cand_gly is not None
             for cl in clusters:
                 lead = cl[0]
+                lead_gly = lead.glycan
+                assert lead_gly is not None
                 same_context = bool(
                     (cand.strain and lead.strain and cand.strain == lead.strain)
                     or (cand.pmid > 0 and lead.pmid > 0 and cand.pmid == lead.pmid)
                 )
-                if cand.glycan.is_isomorphic(lead.glycan, allow_wildcards=True):
+                if cand_gly.is_isomorphic(lead_gly, allow_wildcards=True):
                     cl.append(cand)
                     placed = True
                     break
                 if same_context and (
-                    cand.glycan.is_subgraph_of(lead.glycan)
-                    or (not cand.is_repeating and cand.glycan.is_oligomer_of(lead.glycan))
-                    or (lead.is_repeating and not cand.is_repeating and lead.glycan.is_oligomer_of(cand.glycan))
+                    cand_gly.is_subgraph_of(lead_gly)
+                    or (not cand.is_repeating and cand_gly.is_oligomer_of(lead_gly))
+                    or (lead.is_repeating and not cand.is_repeating and lead_gly.is_oligomer_of(cand_gly))
                 ):
                     cl.append(cand)
                     placed = True
@@ -450,7 +463,7 @@ def save_predicted_loci_cache(
             curr += len(loci_obj)
             offsets[i + 1] = curr
         flat_loci = Loci.from_list(all_loci_list) if all_loci_list else Loci.empty()
-        extra_arrays: dict[str, np.ndarray] = {}
+        extra_arrays: dict[str, Any] = {}
         if strain_to_assembly:
             s_items = sorted(strain_to_assembly.items())
             extra_arrays["strain_orgs"] = np.array([o[:64] for (o, _), _ in s_items], dtype="S64")
@@ -482,7 +495,7 @@ async def resolve_and_predict_loci(
     loci_cache_path: Path = DEFAULT_LOCI_CACHE_PATH,
 ) -> tuple[dict[bytes, tuple[bytes, Loci]], dict[tuple[bytes, bytes], bytes], dict[int, bytes]]:
     """Fetch in-memory `GenomeAssembly` FASTAs from NCBI and predict candidate `Loci` via `LocusPredictor`."""
-    import httpx
+    import httpx2
 
     t_stage0 = time.perf_counter()
     batch_predictor = LocusPredictor(min_completeness=0.65, stitch_contig_splits=False)
@@ -752,7 +765,7 @@ async def resolve_and_predict_loci(
             await asyncio.sleep(delay)
 
     with _cassette_ctx(recorder, "ncbi_eutils.toml"):
-        async with httpx.AsyncClient(timeout=35.0, follow_redirects=True) as client:
+        async with httpx2.AsyncClient(timeout=35.0, follow_redirects=True) as client:
             uncached_tier1 = [
                 acc for acc in sorted(explicit_nuccore)[:300] if acc.split(".")[0] not in base_acc_in_cache
             ]
@@ -856,7 +869,9 @@ async def resolve_and_predict_loci(
                                     continue
                                 subtype = info.get("subtype", "")
                                 subname = info.get("subname", "")
-                                is_cps_t = any(w in title_low for w in ("capsul", "cps", "kps", "k-antigen", "k antigen"))
+                                is_cps_t = any(
+                                    w in title_low for w in ("capsul", "cps", "kps", "k-antigen", "k antigen")
+                                )
                                 uid_to_meta[u] = (acc_ver, title, subname, subtype, is_cps_t)
                                 uid_to_accver[u] = acc_ver
                     except Exception:
@@ -943,7 +958,9 @@ async def resolve_and_predict_loci(
                                     syn_s = re.sub(r"\s+", " ", m_syn.group(1).strip())
                                     org_b, orig_str_b = biosample_uid_to_strain[b_uid]
                                     org_s = org_b.decode("utf-8", errors="replace")
-                                    term_syn = f'"{org_s}"[Organism] AND "{syn_s}"[Infraspecies] AND "latest refseq"[Filter]'
+                                    term_syn = (
+                                        f'"{org_s}"[Organism] AND "{syn_s}"[Infraspecies] AND "latest refseq"[Filter]'
+                                    )
                                     r_as = await client.get(
                                         f"{NCBI_EUTILS_URL}/esearch.fcgi",
                                         params={**base_params, "db": "assembly", "term": term_syn, "retmax": "1"},
@@ -1005,11 +1022,11 @@ async def resolve_and_predict_loci(
                     pass
 
             save_predicted_loci_cache(
-        loci_cache_path,
-        assembly_loci_cache,
-        strain_to_assembly=strain_to_assembly,
-        pmid_to_doi=pmid_to_doi,
-    )
+                loci_cache_path,
+                assembly_loci_cache,
+                strain_to_assembly=strain_to_assembly,
+                pmid_to_doi=pmid_to_doi,
+            )
             print(
                 f"[KBank] Tier 2 whole-genome assemblies complete ({len(strain_to_assembly)} strain assemblies, {time.perf_counter() - t_stage0:.1f}s)",
                 flush=True,
@@ -1144,7 +1161,7 @@ async def resolve_and_predict_loci(
                     blob_txt = f"{title} | {subname}"
                     title_low = title.lower()
                     is_cps_t = any(w in title_low for w in ("capsul", "cps", "kps", "k-antigen", "k antigen"))
-                    sub_pairs = list(zip(subtype.split("|"), subname.split("|")))
+                    sub_pairs = list(zip(subtype.split("|"), subname.split("|"), strict=False))
 
                     matched_toks = _find_matching_tokens(title, blob_txt, sub_pairs, num_map, word_map, multi_map)
                     for m_tok in matched_toks:
@@ -1165,7 +1182,7 @@ async def resolve_and_predict_loci(
                 if u in uid_to_meta:
                     uid_priority[u] += 50
 
-            for p_val, u_list in sorted(pmid_to_nuccore_uids.items()):
+            for _p_val, u_list in sorted(pmid_to_nuccore_uids.items()):
                 valid_u = [u for u in u_list if u in uid_to_meta]
                 for idx_u, u in enumerate(valid_u[:8]):
                     uid_priority[u] += 25 - idx_u
@@ -1183,9 +1200,7 @@ async def resolve_and_predict_loci(
                     for idx_u, u in enumerate(merged):
                         uid_priority[u] += w * (3 - idx_u)
 
-            top_nuccore_uids = [
-                u for u, _ in sorted(uid_priority.items(), key=lambda kv: (-kv[1], kv[0]))[:1200]
-            ]
+            top_nuccore_uids = [u for u, _ in sorted(uid_priority.items(), key=lambda kv: (-kv[1], kv[0]))[:1200]]
             uid_to_predicted: dict[str, tuple[bytes, list[Locus]]] = {}
             accbase_to_uids: dict[str, list[str]] = defaultdict(list)
             uids_to_fetch: list[str] = []
@@ -1247,11 +1262,11 @@ async def resolve_and_predict_loci(
                     await _polite_sleep(t_req)
 
             save_predicted_loci_cache(
-        loci_cache_path,
-        assembly_loci_cache,
-        strain_to_assembly=strain_to_assembly,
-        pmid_to_doi=pmid_to_doi,
-    )
+                loci_cache_path,
+                assembly_loci_cache,
+                strain_to_assembly=strain_to_assembly,
+                pmid_to_doi=pmid_to_doi,
+            )
             print(
                 f"[KBank] Tier 1.5 + Tier 3 BGC FASTA segmentation complete ({len(uid_to_predicted)} BGCs predicted, {time.perf_counter() - t_stage0:.1f}s)",
                 flush=True,
@@ -1291,7 +1306,7 @@ async def resolve_and_predict_loci(
                 for u in pred_u:
                     acc_ver, title, subname, subtype, _ = uid_to_meta[u]
                     blob_txt = f"{title} | {subname}"
-                    sub_pairs = list(zip(subtype.split("|"), subname.split("|")))
+                    sub_pairs = list(zip(subtype.split("|"), subname.split("|"), strict=False))
                     m_toks = _find_matching_tokens(title, blob_txt, sub_pairs, p_num_map, p_word_map, p_multi_map)
                     for m_s in m_toks:
                         tok_b = r_toks[m_s]
@@ -1397,7 +1412,7 @@ def build_curated_glycan_records(
         for k_acc, val in assembly_loci_cache.items()
         if not k_acc.startswith((b"nuccore:", b"pmid:"))
     }
-    match_memo: dict[tuple[bytes, int, ArchetypeCategory | None, LocusArchetype | None], Any] = {}
+    match_memo: dict[tuple[bytes, int, int, ArchetypeCategory | None, LocusArchetype | None], Any] = {}
 
     sero_acc_hints: dict[tuple[bytes, bytes], list[bytes]] = defaultdict(list)
     sero_pmids: dict[tuple[bytes, bytes], list[int]] = defaultdict(list)
@@ -1487,6 +1502,7 @@ def build_curated_glycan_records(
     merged_ids_re = re.compile(rb"\[merged_ids=([^\]]+)\]")
 
     for rec in pre_consolidated:
+        assert rec.glycan is not None
         gly = rec.glycan
         hint_text = b"%s %s" % (rec.antigen_type, rec.notes)
         expected_cat, expected_arch = assigner.infer_expected_archetype(hint_text)

@@ -5,6 +5,7 @@ Provides `TargetType`, `BiochemicalRule`, `BiochemicalRuleRegistry`, `GeneGlycan
 (`GeneCluster` / `GeneClusters` from `serogen`) onto bipartite carbohydrate structures
 (`Glycan` / `Glycans` from `kbank`).
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
@@ -362,19 +363,12 @@ def _edge_signatures(
     is_term_leaf = int(
         s_node.is_branch
         and not any(
-            oe.target == e.source
-            and not oe.edge_type.is_polymer
-            and not glycan.nodes[oe.source].is_modifier
+            oe.target == e.source and not oe.edge_type.is_polymer and not glycan.nodes[oe.source].is_modifier
             for oe in glycan.edges
         )
     )
     acc_is_branch_pt = int(
-        sum(
-            1
-            for oe in glycan.edges
-            if oe.target == e.target and not glycan.nodes[oe.source].is_modifier
-        )
-        >= 2
+        sum(1 for oe in glycan.edges if oe.target == e.target and not glycan.nodes[oe.source].is_modifier) >= 2
     )
 
     sig_full = (s_sug, s_chi, s_fur, anom, don, acc, t_sug, is_bb, is_term_leaf, acc_is_branch_pt)
@@ -435,7 +429,11 @@ class PanGraphConsensusPrior:
         aa_seq: bytes | None = None,
     ) -> int | None:
         """Return the highest-scoring initiating sugar index in `candidate_sugars` for `cluster_id`, or `None`."""
-        if cluster_id > 0 and cluster_id in self.init_cluster_sugar and self.cluster_record_counts.get(cluster_id, 0) >= 2:
+        if (
+            cluster_id > 0
+            and cluster_id in self.init_cluster_sugar
+            and self.cluster_record_counts.get(cluster_id, 0) >= 2
+        ):
             s_map = self.init_cluster_sugar[cluster_id]
             best_s: int | None = None
             best_val = 0.0
@@ -526,9 +524,15 @@ class PanGraphConsensusPrior:
             dl_map = self.cluster_sig_dl.get(c_tier, {})
             da_map = self.cluster_sig_da.get(c_tier, {})
 
-            gly_full_w = {_edge_signatures(glycan, k)[0]: full_map.get(_edge_signatures(glycan, k)[0], 0.0) for k in cand_edges}
-            gly_dl_w = {_edge_signatures(glycan, k)[1]: dl_map.get(_edge_signatures(glycan, k)[1], 0.0) for k in cand_edges}
-            gly_da_w = {_edge_signatures(glycan, k)[2]: da_map.get(_edge_signatures(glycan, k)[2], 0.0) for k in cand_edges}
+            gly_full_w = {
+                _edge_signatures(glycan, k)[0]: full_map.get(_edge_signatures(glycan, k)[0], 0.0) for k in cand_edges
+            }
+            gly_dl_w = {
+                _edge_signatures(glycan, k)[1]: dl_map.get(_edge_signatures(glycan, k)[1], 0.0) for k in cand_edges
+            }
+            gly_da_w = {
+                _edge_signatures(glycan, k)[2]: da_map.get(_edge_signatures(glycan, k)[2], 0.0) for k in cand_edges
+            }
 
             w_full = gly_full_w.get(sig_full, 0.0)
             max_gly_full = max(gly_full_w.values(), default=0.0)
@@ -653,7 +657,10 @@ class PanGraphConsensusPrior:
                 if not has_consensus and self.cluster_record_counts.get(c_other, 0) >= 2:
                     o_dl_map = self.cluster_sig_dl.get(c_other, {})
                     if o_dl_map:
-                        cand_o_w = {_edge_signatures(glycan, k)[1]: o_dl_map.get(_edge_signatures(glycan, k)[1], 0.0) for k in cand_edges}
+                        cand_o_w = {
+                            _edge_signatures(glycan, k)[1]: o_dl_map.get(_edge_signatures(glycan, k)[1], 0.0)
+                            for k in cand_edges
+                        }
                         max_o_w = max(cand_o_w.values(), default=0.0)
                         if max_o_w >= 0.80:
                             for k_other in cand_edges:
@@ -742,9 +749,9 @@ class PanGraphConsensusPrior:
                 c_src = int(GeneNode(int(pan_l_nodes[int(r_i)])).cluster_id)
                 c_tgt = int(GeneNode(int(pan_l_nodes[int(c_i)])).cluster_id)
                 if c_src > 0 and c_tgt > 0:
-                    prior.pan_locus_edge_counts[(c_src, c_tgt)] = (
-                        prior.pan_locus_edge_counts.get((c_src, c_tgt), 0) + int(cnt)
-                    )
+                    prior.pan_locus_edge_counts[(c_src, c_tgt)] = prior.pan_locus_edge_counts.get(
+                        (c_src, c_tgt), 0
+                    ) + int(cnt)
 
         if len(glycans_batch.node_types) > 0:
             _, pan_g_nodes, pan_g_counts = glycans_batch.as_pan_graph()
@@ -795,7 +802,7 @@ class PanGraphConsensusPrior:
             GeneRole.NUCLEOTIDYLTRANSFERASE,
         }
         helper = assigner if assigner is not None else BiosyntheticAssigner()
-        init_sugar_acc: dict[int, Counter[int]] = defaultdict(Counter)
+        init_sugar_acc: dict[int, dict[int, float]] = defaultdict(lambda: defaultdict(float))
         prec_sugar_acc: dict[int, dict[int, float]] = defaultdict(lambda: defaultdict(float))
         mod_spec_acc: dict[int, dict[tuple[int, int, int], float]] = defaultdict(lambda: defaultdict(float))
         mod_roles_set = {
@@ -937,9 +944,7 @@ class PanGraphConsensusPrior:
             prior.classifier_suite.precompute_for_loci(locus_list)
 
         # 3. Iterative EM across all paired records to refine GT cluster_id -> linkage & syntenic pair priors
-        paired_indices = [
-            i for i in range(n) if len(locus_list[i].nodes) > 0 and len(rotated_glycans[i].nodes) > 0
-        ]
+        paired_indices = [i for i in range(n) if len(locus_list[i].nodes) > 0 and len(rotated_glycans[i].nodes) > 0]
         if not paired_indices:
             return prior, rotated_glycans
 
@@ -1131,9 +1136,7 @@ class BiosyntheticCostStrategy(CostStrategy):
             gene_graph = graph_a if isinstance(graph_a, Locus) else None
 
         gene_translations = (
-            gene_graph.genes.translations
-            if (isinstance(gene_graph, Locus) and len(gene_graph.genes) > 0)
-            else None
+            gene_graph.genes.translations if (isinstance(gene_graph, Locus) and len(gene_graph.genes) > 0) else None
         )
 
         n_genes = len(gene_labels)
@@ -1262,7 +1265,11 @@ class BiosyntheticCostStrategy(CostStrategy):
                     e1 = glycan_graph.edges[k1]
                     sig1 = _edge_signatures(glycan_graph, k1)[0][:7]
                     for k2 in intra_core_edges:
-                        if k1 == k2 or (n_res + k1) in deferred_processive_cols or (n_res + k2) in deferred_processive_cols:
+                        if (
+                            k1 == k2
+                            or (n_res + k1) in deferred_processive_cols
+                            or (n_res + k2) in deferred_processive_cols
+                        ):
                             continue
                         e2 = glycan_graph.edges[k2]
                         if e1.source == e2.target and _edge_signatures(glycan_graph, k2)[0][:7] == sig1:
@@ -1271,9 +1278,7 @@ class BiosyntheticCostStrategy(CostStrategy):
                             break
 
         core_sugars_in_glycan: set[int] = (
-            {nd.sugar for nd in glycan_graph.nodes if not nd.is_modifier}
-            if glycan_graph is not None
-            else set()
+            {nd.sugar for nd in glycan_graph.nodes if not nd.is_modifier} if glycan_graph is not None else set()
         )
         gt_prec_sugars: dict[int, set[int]] = {idx_g: set() for idx_g in gt_gene_indices}
         if self.pan_prior is not None and gt_gene_indices and prec_gene_indices and core_sugars_in_glycan:
@@ -1333,7 +1338,11 @@ class BiosyntheticCostStrategy(CostStrategy):
                                 base_wzy = 0.01 if j == wzy_bipartite_idx else 0.65
                             else:
                                 base_wzy = 0.04
-                            if self.pan_prior is not None and (c_id > 0 or aa_seq_i is not None) and glycan_graph is not None:
+                            if (
+                                self.pan_prior is not None
+                                and (c_id > 0 or aa_seq_i is not None)
+                                and glycan_graph is not None
+                            ):
                                 edge_k = j - n_res
                                 if 0 <= edge_k < len(glycan_graph.edges):
                                     wzy_b, _ = self.pan_prior.gt_edge_bonus(
@@ -1359,11 +1368,7 @@ class BiosyntheticCostStrategy(CostStrategy):
                                 continue
 
                             donor_s = linkage_to_donor_sugar.get(j, -1)
-                            base_c = (
-                                0.14
-                                if (donor_s in rule.compatible_sugars or not rule.compatible_sugars)
-                                else 0.38
-                            )
+                            base_c = 0.14 if (donor_s in rule.compatible_sugars or not rule.compatible_sugars) else 0.38
                             if gn.role == GeneRole.GLYCOSYLTRANSFERASE and glycan_graph is not None:
                                 edge_k = j - n_res
                                 if 0 <= edge_k < len(glycan_graph.edges):
@@ -1524,7 +1529,7 @@ class GeneGlycanAssignment:
 
 
 @dataclass(slots=True, frozen=True)
-class GeneGlycanAssignments(RaggedArrayContainer[tuple[GeneGlycanAssignment, ...], "GeneGlycanAssignments"]):
+class GeneGlycanAssignments(RaggedArrayContainer[Any, "GeneGlycanAssignments"]):
     """Ragged Structure-of-Arrays (SoA) container for cross-domain gene-to-glycan component assignments.
 
     Stores variable-length bipartite assignment edges per `GlycanRecord` in flat contiguous
@@ -1556,6 +1561,12 @@ class GeneGlycanAssignments(RaggedArrayContainer[tuple[GeneGlycanAssignment, ...
 
     @overload
     def __getitem__(self, item: slice | np.ndarray[tuple[int], Any] | list[Any]) -> GeneGlycanAssignments: ...
+
+    @overload
+    def __getitem__(
+        self,
+        item: int | np.integer[Any] | slice | np.ndarray[tuple[int], Any] | list[Any],
+    ) -> tuple[GeneGlycanAssignment, ...] | GeneGlycanAssignments: ...
 
     def __getitem__(
         self,
@@ -1738,11 +1749,7 @@ class BiosyntheticAssigner:
         self.classifier_suite = classifier_suite
         if self.pan_prior is not None and classifier_suite is not None:
             self.pan_prior.classifier_suite = classifier_suite
-        self.aligner = (
-            aligner
-            if aligner is not None
-            else BiosyntheticAligner(sugars_db=sugars_db, pan_prior=pan_prior)
-        )
+        self.aligner = aligner if aligner is not None else BiosyntheticAligner(sugars_db=sugars_db, pan_prior=pan_prior)
         self.registry = BiosyntheticRuleRegistry(sugars_db=sugars_db)
 
     _LPS_PRIMARY_INIT_SUGARS: frozenset[bytes] = frozenset(
@@ -1891,8 +1898,7 @@ class BiosyntheticAssigner:
         if any(k in h for k in ("cps", "k-antigen", "k antigen", "capsul", "vi-antigen", "vi antigen")):
             return ArchetypeCategory.CAPSULE, None
         if any(
-            k in h
-            for k in ("o-antigen", "o antigen", "ops", "lps", "los", "lipopolysaccharide", "lipooligosaccharide")
+            k in h for k in ("o-antigen", "o antigen", "ops", "lps", "los", "lipopolysaccharide", "lipooligosaccharide")
         ):
             return ArchetypeCategory.O_ANTIGEN, None
         if any(k in h for k in ("eps", "exopolysaccharide", "biofilm")):
@@ -2223,11 +2229,7 @@ class BiosyntheticAssigner:
 
         for _, _, _, _, g_idx in selected:
             old_nd = new_nodes[g_idx]
-            target_role = (
-                GeneRole.POLYMERASE
-                if (is_wzy_arch and not has_poly)
-                else GeneRole.GLYCOSYLTRANSFERASE
-            )
+            target_role = GeneRole.POLYMERASE if (is_wzy_arch and not has_poly) else GeneRole.GLYCOSYLTRANSFERASE
             if target_role == GeneRole.POLYMERASE:
                 has_poly = True
             new_nodes[g_idx] = GeneNode(
@@ -2429,8 +2431,7 @@ class BiosyntheticAssigner:
         wzy_edge_k, _, _ = glycan.polymer_edge_and_assembly_depths()
         wzy_bip_col = (n_res + wzy_edge_k) if wzy_edge_k is not None else -1
         has_wzy_locked = any(
-            locus.nodes[g_i].role == GeneRole.POLYMERASE and b_i == wzy_bip_col
-            for g_i, b_i in linkage_matches.items()
+            locus.nodes[g_i].role == GeneRole.POLYMERASE and b_i == wzy_bip_col for g_i, b_i in linkage_matches.items()
         )
         for g_i, b_i in linkage_matches.items():
             if locus.nodes[g_i].role == GeneRole.POLYMERASE and b_i == wzy_bip_col:
@@ -2533,11 +2534,7 @@ class BiosyntheticAssigner:
                 if is_pan:
                     marginal_prob = max(marginal_prob, 0.85)
                 match_score = float(np.clip(0.30 * np.exp(-c_ii) + 0.70 * marginal_prob, 0.10, 0.99))
-                ev_link = (
-                    AssignmentEvidence.PAN_GRAPH_CONSENSUS
-                    if is_pan
-                    else AssignmentEvidence.GRAPH_ALIGNED
-                )
+                ev_link = AssignmentEvidence.PAN_GRAPH_CONSENSUS if is_pan else AssignmentEvidence.GRAPH_ALIGNED
 
                 out.append(
                     GeneGlycanAssignment(
@@ -2611,23 +2608,28 @@ class BiosyntheticAssigner:
                     e_u = glycan.edges[edge_u]
                     _, sig_dl_u, sig_da_u, _ = _edge_signatures(glycan, edge_u)
 
-                    def _score_multi_gt(g_c: int) -> tuple[int, int, int, float, int, int]:
+                    def _score_multi_gt(
+                        g_c: int,
+                        _b_u: int = b_u,
+                        _e_u: Any = e_u,
+                        _sig_dl_u: Any = sig_dl_u,
+                        _sig_da_u: Any = sig_da_u,
+                    ) -> tuple[int, int, int, float, int, int]:
                         unmatched_g = int(g_c not in linkage_matches)
                         b_p = linkage_matches.get(g_c, -1)
                         edge_p = b_p - n_res
                         has_p = 0 <= edge_p < len(glycan.edges)
-                        same_dl = int(has_p and _edge_signatures(glycan, edge_p)[1] == sig_dl_u)
-                        same_da = int(has_p and _edge_signatures(glycan, edge_p)[2] == sig_da_u)
+                        same_dl = int(has_p and _edge_signatures(glycan, edge_p)[1] == _sig_dl_u)
+                        same_da = int(has_p and _edge_signatures(glycan, edge_p)[2] == _sig_da_u)
                         is_adj = int(
                             has_p
                             and (
-                                glycan.edges[edge_p].target == e_u.source
-                                or glycan.edges[edge_p].source == e_u.target
+                                glycan.edges[edge_p].target == _e_u.source or glycan.edges[edge_p].source == _e_u.target
                             )
                         )
                         c_val = (
-                            float(c_mat[g_c, b_u])
-                            if np.isfinite(c_mat[g_c, b_u])
+                            float(c_mat[g_c, _b_u])
+                            if np.isfinite(c_mat[g_c, _b_u])
                             else (float(c_mat[g_c, b_p]) if (has_p and np.isfinite(c_mat[g_c, b_p])) else 1.0)
                         )
                         bp_len = int(gene_lengths[g_c]) if g_c < len(gene_lengths) else 1000
@@ -2702,9 +2704,7 @@ class BiosyntheticAssigner:
                             linkage=e_u.edge_type,
                             edge_index=edge_u,
                             evidence=(
-                                AssignmentEvidence.PAN_GRAPH_CONSENSUS
-                                if is_pan_u
-                                else AssignmentEvidence.GRAPH_ALIGNED
+                                AssignmentEvidence.PAN_GRAPH_CONSENSUS if is_pan_u else AssignmentEvidence.GRAPH_ALIGNED
                             ),
                             score=score_u,
                         )
@@ -2810,16 +2810,10 @@ class BiosyntheticAssigner:
             s_node = glycan.nodes[edge.source]
             t_node = glycan.nodes[edge.target]
             acc = edge.edge_type.acceptor
-            if (
-                s_node.sugar == oac_idx
-                and not t_node.is_modifier
-                and not (edge.edge_type.donor == 0 and acc == 0)
-            ):
+            if s_node.sugar == oac_idx and not t_node.is_modifier and not (edge.edge_type.donor == 0 and acc == 0):
                 t_name = Sugars.names[t_node.sugar]
                 t_cls = Sugars.classes[t_node.sugar]
-                is_free_amino = (b"N" in t_name and b"NAc" not in t_name) or (
-                    t_cls in (b"HexN", b"dHexN", b"HexNA")
-                )
+                is_free_amino = (b"N" in t_name and b"NAc" not in t_name) or (t_cls in (b"HexN", b"dHexN", b"HexNA"))
                 if is_free_amino and acc in (0, 2, 4, 5, 7):
                     n_acetyl_mods.add(edge.source)
                     if acc in (0, 2):
@@ -3091,14 +3085,10 @@ class BiosyntheticAssigner:
         """Map each glycosyltransferase / polymerase / synthase in `locus` to its `Glycan` linkage."""
         assignments: dict[int, tuple[int, LinkageType]] = {}
         for item in self.assign_genes(locus, glycan, alignment=alignment):
-            if (
-                item.linkage is not None
-                and item.role
-                in (
-                    GeneRole.GLYCOSYLTRANSFERASE,
-                    GeneRole.POLYMERASE,
-                    GeneRole.TRANSMEMBRANE_SYNTHASE,
-                )
+            if item.linkage is not None and item.role in (
+                GeneRole.GLYCOSYLTRANSFERASE,
+                GeneRole.POLYMERASE,
+                GeneRole.TRANSMEMBRANE_SYNTHASE,
             ):
                 assignments[item.gene_index] = (item.bipartite_glycan_index, item.linkage)
         return assignments
@@ -3138,9 +3128,7 @@ class BiosyntheticAssigner:
 
         # Count non-modifier glycosidic linkages vs GT/polymerase/synthase count
         n_core_linkages = sum(
-            1
-            for e in glycan.edges
-            if not glycan.nodes[e.source].is_modifier and not glycan.nodes[e.target].is_modifier
+            1 for e in glycan.edges if not glycan.nodes[e.source].is_modifier and not glycan.nodes[e.target].is_modifier
         )
         roles = locus.roles
         n_gt_like = int(
@@ -3292,5 +3280,3 @@ def infer_gt_linkage_assignments(
 BiochemicalRule = BiosyntheticRule
 GeneGlycanCostStrategy = BiosyntheticCostStrategy
 GeneGlycanAligner = BiosyntheticAligner
-
-

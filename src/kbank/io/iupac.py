@@ -1,13 +1,13 @@
 import re
 
 from kbank.glycan import Anomer, Chirality, Glycan, LinkageEdge, LinkageType, ResidueType
+from kbank.io.base import GlycanParseError, GlycanParser, Substitution, TokenType
 from kbank.sugars import Sugars
-from kbank.io.base import GlycanParser, Substitution, GlycanParseError, TokenType
 
 
 class IUPACParser(GlycanParser):
-    _RE_POLYMER_DONOR = re.compile(br"-?\(([ab?]?[0-9?]+)(?:->|-)\s*$")
-    _RE_POLYMER_ACCEPTOR = re.compile(br"^\s*(?:->|-)([0-9?]+)\)-?")
+    _RE_POLYMER_DONOR = re.compile(rb"-?\(([ab?]?[0-9?]+)(?:->|-)\s*$")
+    _RE_POLYMER_ACCEPTOR = re.compile(rb"^\s*(?:->|-)([0-9?]+)\)-?")
 
     @staticmethod
     def _parse_linkage(link: bytes) -> LinkageType:
@@ -16,9 +16,7 @@ class IUPACParser(GlycanParser):
         except ValueError as e:
             raise GlycanParseError(str(e)) from e
 
-    def _parse_monosaccharide_with_anomer(
-        self, sugar: bytes
-    ) -> tuple[Anomer, ResidueType, list[Substitution]]:
+    def _parse_monosaccharide_with_anomer(self, sugar: bytes) -> tuple[Anomer, ResidueType, list[Substitution]]:
         sugar = sugar.strip(b"-")
         chirality = Chirality.UNKNOWN
         anomer = Anomer.UNKNOWN
@@ -172,4 +170,3 @@ class IUPACParser(GlycanParser):
             )
 
         return Glycan(canonical=sequence, nodes=tuple(monosaccharides), edges=tuple(edges))
-
