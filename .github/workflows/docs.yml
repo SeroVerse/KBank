@@ -63,10 +63,12 @@ jobs:
       - name: Install documentation dependencies
         run: uv sync --python 3.14 --group docs
 
-      - name: Export Marimo slide decks from cached session snapshots
+      - name: Export Marimo slide decks and interactive apps
         run: |
           uv run --no-sync python -c '
           import json
+          import subprocess
+          import sys
           from pathlib import Path
           from marimo._config.manager import get_default_config_manager
           from marimo._export.exporter import Exporter
@@ -84,6 +86,23 @@ jobs:
           for nb_path in sorted(Path("scripts").glob("*.py")):
               session_path = Path("scripts/__marimo__/session") / f"{nb_path.name}.json"
               if not session_path.exists():
+                  if "marimo.App(" in nb_path.read_text(encoding="utf-8"):
+                      out_html = out_dir / f"{nb_path.stem}.html"
+                      subprocess.run(
+                          [
+                              sys.executable,
+                              "-m",
+                              "marimo",
+                              "export",
+                              "html",
+                              str(nb_path),
+                              "-o",
+                              str(out_html),
+                              "--no-include-code",
+                          ],
+                          check=True,
+                      )
+                      print(f"Executed & exported {out_html} ({out_html.stat().st_size:,} bytes)")
                   continue
               file_manager = load_notebook(str(nb_path.resolve()))
               session_data = json.loads(session_path.read_text(encoding="utf-8"))
@@ -111,7 +130,7 @@ jobs:
                       app_config=file_manager.app.config,
                       snapshot=snapshot,
                       display_config=resolved["display"],
-                      options=HTMLExportOptions(include_code=True, files=()),
+                      options=HTMLExportOptions(include_code=bool(layout is not None), files=()),
                       layout=layout,
                       sharing_config=resolved.get("sharing"),
                   )

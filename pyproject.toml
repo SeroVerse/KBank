@@ -37,6 +37,7 @@ docs = [
     "mkdocstrings[python]",
     "zenzic>=0.30.0; python_version < '3.14'",
     "marimo>=0.25.1",
+    "altair>=5.5.0",
 ]
 test = [
     "pytest>=8.0.0",
