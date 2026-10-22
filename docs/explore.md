@@ -22,18 +22,18 @@ Interactive browser for exploring [`src/kbank/data/glycans.npz`](https://github.
 
 - **`LocusPlotter(GraphPlotter)`**: Renders `Locus` biosynthetic gene clusters using strand-aware directional arrows coloured by `GeneRole` or MCL homology cluster, plus 2D Fruchterman-Reingold Pan-Locus synteny networks (`Loci.as_pan_graph()`).
 - **`GlycanPlotter(GraphPlotter)`**: Renders [`Glycan`][kbank.glycan.Glycan] repeating units according to **SNFG (Symbol Nomenclature for Glycans)** shapes and stereochemical colours, plus 2D Fruchterman-Reingold Pan-Glycan monosaccharide transition networks ([`Glycans`][kbank.glycan.Glycans] `.as_pan_graph()`).
-- **Cross-Domain Gene $\leftrightarrow$ Glycan Highlighting**: Select any paired record in the dropdown and hover over a gene arrow or SNFG monosaccharide to highlight its bipartite [`GeneGlycanAssignment`][kbank.biosynthesis.align.GeneGlycanAssignment].
+- **Cross-Domain Gene ↔ Glycan Highlighting**: Select any paired record in the dropdown and hover over a gene arrow or SNFG monosaccharide to highlight its bipartite [`GeneGlycanAssignment`][kbank.biosynthesis.align.GeneGlycanAssignment].
 
 <div class="sv-app-toolbar">
   <span><strong>Interactive Marimo App</strong> · Powered by <code>SeroGen LayoutEngine</code>, <code>LocusPlotter</code> &amp; <code>GlycanPlotter</code> (SNFG)</span>
   <div class="sv-app-links">
-    <a class="sv-deck-btn" href="../notebooks/assets/explore_kbank.html" target="_blank" rel="noopener">
+    <a class="sv-deck-btn" href="notebooks/assets/explore_kbank.html" target="_blank" rel="noopener">
       Open Fullscreen Explorer ↗
     </a>
   </div>
 </div>
 
-<iframe class="sv-app-frame" src="../notebooks/assets/explore_kbank.html" title="KBank Interactive Geno-Glycomic Database Explorer" loading="lazy" allowfullscreen></iframe>
+<iframe class="sv-app-frame" src="notebooks/assets/explore_kbank.html" title="KBank Interactive Geno-Glycomic Database Explorer" loading="lazy" allowfullscreen></iframe>
 
 ---
 
