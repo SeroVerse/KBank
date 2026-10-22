@@ -381,7 +381,7 @@ def _(
             tooltip=["Reaction:N", "Donor:N", "Mechanism:N", "Cluster_ID:Q", "Weight:Q"],
         )
         .properties(
-            title="2D SVD Projection of 192-D 1D-CNN GT Embeddings",
+            title="2D SVD Projection of 153-D 1D-CNN GT Embeddings",
             width=380,
             height=320,
         )
@@ -457,7 +457,7 @@ def _(
             mo.md(
                 """
                 # `BiosyntheticClassifierSuite` — 10-Head 1D-CNN Enzyme Specificity & EM Self-Training
-                Factorized multi-scale 1D-CNN heads (`embed_dim=16`, `num_filters=64`, `kernel_size=(5, 9, 13)`, `spatial_zones=2`)
+                Factorized multi-scale 1D-CNN heads (`embed_dim=16`, `num_filters=64`, `kernel_size=(5, 9, 13)`)
                 warm-started from [`GeneRoleClassifier`][serogen.genes.cnn.GeneRoleClassifier] and trained via 2-pass Expectation-Maximization
                 across [`GlycanRecords`][kbank.db.GlycanRecords].
                 """
@@ -611,13 +611,13 @@ def _(
 
 @app.cell
 def _(alt, emb_chart, mech_chart, mo, seqs_dl):
-    # Slide 4: 2D SVD Projection of 192-D 1D-CNN GT Sequence Embeddings
+    # Slide 4: 2D SVD Projection of 153-D 1D-CNN GT Sequence Embeddings
     mo.vstack(
         [
             mo.md(
                 f"""
                 ## 3. 1D-CNN Sequence Embedding Geometry (`clf.transform`, `{len(seqs_dl):,}` GTs)
-                Dual-zone (`N`-terminal / `C`-terminal) max+mean pooled `192-D` convolutional representations separate
+                Multi-scale max+mean pooled `153-D` convolutional + compositional representations (`2 * 64 + 2 + 23`) separate
                 retaining (`GT-B` / `GT4`) vs. inverting (`GT-A` / `GT2`) glycosyltransferases and donor sugar families.
                 """
             ),
@@ -687,7 +687,7 @@ def _(cv_rows, emb_rows, mo):
 
     mo.vstack(
         [
-            mo.md("## 5. Reference Tables: 10-Head Metrics & 192-D GT Embedding Projections"),
+            mo.md("## 5. Reference Tables: 10-Head Metrics & 153-D GT Embedding Projections"),
             mo.ui.tabs(
                 {
                     "10 Specificity Heads (5-Fold CV & Pooled)": mo.md(_head_table),

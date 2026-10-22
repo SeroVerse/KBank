@@ -224,9 +224,7 @@ scripts/__marimo__/*
 docs/notebooks/assets/
 docs/overrides/announcement.html
 
-# Streamlit
-.streamlit/secrets.toml
-
-notebooks/
-data/
+# Local scratch directories
+/notebooks/
+/data/
 src/kbank/app/

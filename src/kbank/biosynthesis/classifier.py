@@ -17,7 +17,6 @@ from typing import TYPE_CHECKING, Any, Self
 import numpy as np
 from serogen.core.seq.seq import Sequences
 from serogen.genes.cnn import GeneRoleClassifier
-from serogen.genes.models import Genes
 from serogen.genes.roles import GeneRole
 from serogen.loci.models import Loci, Locus
 
@@ -154,9 +153,14 @@ class ClusterClassifier(GeneRoleClassifier):
     - `"donor_linkage"`: Joint `(donor_residue, anomer, donor_c, acceptor_c)` glycosidic reaction.
     - `"donor"`: Transferred donor monosaccharide (`ResidueType` chemical bits).
     - `"linkage"`: Formed glycosidic bond (`LinkageType` chemical bits: `anomer`, `donor_c`, `acceptor_c`).
+    - `"acceptor_sugar"`: Acceptor monosaccharide (`ResidueType` chemical bits).
+    - `"acceptor_motif"`: Acceptor stereochemical and topological motif (`{anomer}{sugar}@{root|bb|br}`).
+    - `"is_backbone"`: Main-chain backbone (`1`) vs. side-chain branch (`0`) glycosidic linkage.
     - `"mechanism"`: Retaining (`1`) vs. inverting (`2`) GT stereochemical mechanism.
     - `"anomer"`: Alpha (`1`) vs. beta (`2`) anomeric configuration.
     - `"initiator_sugar"`: Und-PP initiating monosaccharide index (`Sugars` index) for `INITIATOR` genes.
+    - `"wzy_linkage"`: Repeating-unit polymerase (`Wzy`) linkage specificity.
+    - `"modifier_linkage"`: Non-carbohydrate modifier (`OAc`, `Pyr`, `OMe`, etc.) and acceptor carbon.
     - `"component_int"`: Raw bit-packed `GeneGlycanAssignment.component_int`.
     """
 
@@ -249,23 +253,6 @@ class ClusterClassifier(GeneRoleClassifier):
         if not self.is_fitted:
             return ()
         return tuple(self.decode_label(int(c)) for c in self.classes_)
-
-    def top_k_accuracy(
-        self,
-        X: Genes | Sequences | Sequence[Any] | tuple[np.ndarray, np.ndarray],
-        y: Sequence[int | GeneRole] | np.ndarray,
-        k: int = 3,
-    ) -> float:
-        """Compute Top-`k` classification accuracy on `(X, y)`."""
-        probs = self.predict_proba(X)
-        y_arr = np.asarray(y, dtype=np.int64)
-        if len(y_arr) == 0 or len(probs) == 0:
-            return 0.0
-        k_eff = min(max(1, int(k)), probs.shape[1])
-        top_k_idx = np.argsort(probs, axis=1)[:, -k_eff:]
-        top_k_classes = self.classes_[top_k_idx].astype(np.int64)
-        hits = np.any(top_k_classes == y_arr[:, None], axis=1)
-        return float(np.mean(hits))
 
     def predict_cluster_proba(
         self,
@@ -536,14 +523,11 @@ class ClusterClassifier(GeneRoleClassifier):
 
 
 class BiosyntheticClassifierSuite:
-    """Factorized suite of `ClusterClassifier` models for hybrid pan-graph / sequence inference.
+    """Factorized suite of 10 `ClusterClassifier` models for hybrid pan-graph / sequence inference.
 
-    Combines five specialized 1D-CNN heads:
-    - `donor_linkage_clf`: Joint `(donor, linkage)` reaction classifier.
-    - `donor_clf`: Donor monosaccharide classifier (`D-Glcp`, `L-Rhap`, `D-Galp`, etc.).
-    - `linkage_clf`: Glycosidic linkage classifier (`a1-3`, `b1-4`, etc.).
-    - `mechanism_clf`: Stereochemical mechanism classifier (`RETAINING` vs. `INVERTING`).
-    - `initiator_clf`: `INITIATOR` Und-PP sugar classifier (`D-Galp`, `D-Glcp`, `D-GlcNAcp`, etc.).
+    Combines 10 specialized 1D-CNN heads across `SUITE_TARGETS` (`donor_linkage`, `donor`,
+    `linkage`, `acceptor_sugar`, `acceptor_motif`, `is_backbone`, `mechanism`,
+    `initiator_sugar`, `wzy_linkage`, and `modifier_linkage`).
     """
 
     SUITE_TARGETS: tuple[str, ...] = (
@@ -696,10 +680,6 @@ class BiosyntheticClassifierSuite:
                 clf.dense_b_ = data[f"{prefix}dense_b"].astype(np.float32)
                 clf.k_sizes_ = k_sizes
                 clf.unique_ks_ = unique_ks
-                clf.k_indices_ = np.array(
-                    [np.where(unique_ks == k)[0][0] for k in k_sizes],
-                    dtype=np.int32,
-                )
                 clf.loss_history_ = (
                     data[f"{prefix}loss_history"].astype(np.float32).tolist() if f"{prefix}loss_history" in data else []
                 )

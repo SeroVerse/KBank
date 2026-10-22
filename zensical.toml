@@ -1,11 +1,11 @@
 [project]
-site_url = "https://seroverse.github.io/kbank/"
+site_url = "https://seroverse.github.io/KBank/"
 site_name = "KBank"
 site_description = "Bacterial surface glycan database, biosynthetic gene-to-glycan aligner, and de novo structure predictor"
 site_author = "Tom Stanton"
 copyright = "Copyright &copy; 2026 Tom Stanton — SeroVerse"
 
-repo_url = "https://github.com/seroverse/kbank"
+repo_url = "https://github.com/SeroVerse/KBank"
 repo_name = "SeroVerse/KBank"
 edit_uri = "edit/main/docs/"
 
@@ -95,7 +95,7 @@ toggle.name = "Switch to system preference"
 
 [[project.extra.social]]
 icon = "fontawesome/brands/github"
-link = "https://github.com/seroverse/kbank"
+link = "https://github.com/SeroVerse/KBank"
 name = "SeroVerse/KBank on GitHub"
 
 [project.extra.status]
