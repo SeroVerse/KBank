@@ -56,7 +56,7 @@ def _():
     from kbank.io.csdb import CSDBParser
     from kbank.sugars import Sugars
 
-    alt.data_transformers.disable_max_rows()
+    _ = alt.data_transformers.disable_max_rows()
     return (
         ABC,
         Anomer,
@@ -650,8 +650,13 @@ def _(
         ) -> alt.Chart | alt.LayerChart:
             """Plot a 2D Pan-Locus homology-cluster synteny network across a `Loci` batch via `LayoutEngine`."""
             pan_adj, pan_nodes, pan_counts = loci.as_pan_graph(node_mask=GeneNode.mask("ROLE_ID", "CLUSTER_ID"))
-            pan_csr = pan_adj.tocsr()
-            keep_mask = (pan_counts >= min_node_count) & (GeneNode.CLUSTER_ID.extract_array(pan_nodes) > 0)
+            pan_csr = pan_adj.tocsr().copy()
+            pan_csr.setdiag(0)
+            pan_csr.data[pan_csr.data < min_edge_support] = 0
+            pan_csr.eliminate_zeros()
+
+            has_edge = (np.diff(pan_csr.indptr) > 0) | (np.diff(pan_csr.tocsc().indptr) > 0)
+            keep_mask = (pan_counts >= min_node_count) & (GeneNode.CLUSTER_ID.extract_array(pan_nodes) > 0) & has_edge
             keep_indices = np.nonzero(keep_mask)[0]
             if len(keep_indices) == 0:
                 return alt.Chart(alt.Data(values=[])).mark_point()
@@ -668,7 +673,7 @@ def _(
                 mode="fr",
                 dim=2,
                 iterations=200,
-                gravity=0.30,
+                gravity=1.20,
                 scale=1.0,
                 seed=42,
             )
@@ -756,10 +761,10 @@ def _(
                 )
             )
 
+            nodes_base = alt.Chart(alt.Data(values=node_rows)).transform_filter(alt.datum.max_edge >= edge_param)
+
             nodes_chart = (
-                alt.Chart(alt.Data(values=node_rows))
-                .mark_point(filled=True, shape=ARROW_FWD_PATH, stroke="#0f172a", strokeWidth=1.0)
-                .transform_filter(alt.datum.max_edge >= edge_param)
+                nodes_base.mark_point(filled=True, shape=ARROW_FWD_PATH, stroke="#0f172a", strokeWidth=1.0)
                 .encode(
                     x=alt.X("x:Q", scale=alt.Scale(domain=[-1.15, 1.15]), axis=None),
                     y=alt.Y("y:Q", scale=alt.Scale(domain=[-1.15, 1.15]), axis=None),
@@ -778,9 +783,8 @@ def _(
             )
 
             text_chart = (
-                alt.Chart(alt.Data(values=[r for r in node_rows if r["label"]]))
+                nodes_base.transform_filter(alt.datum.label != "")
                 .mark_text(dy=-12, fontSize=9.5, fontWeight="bold", color="#1e293b")
-                .transform_filter(alt.datum.max_edge >= edge_param)
                 .encode(
                     x="x:Q",
                     y="y:Q",
@@ -1141,8 +1145,13 @@ def _(
             """Plot a 2D Pan-Glycan monosaccharide transition graph across a `Glycans` batch via `LayoutEngine`."""
             chem_mask = int(ResidueType.SUGAR.mask | ResidueType.CHIRALITY.mask | ResidueType.FURANOSE.mask)
             pan_adj, pan_nodes, pan_counts = glycans.as_pan_graph(node_mask=chem_mask)
-            pan_csr = pan_adj.tocsr()
-            keep_mask = pan_counts >= 3
+            pan_csr = pan_adj.tocsr().copy()
+            pan_csr.setdiag(0)
+            pan_csr.data[pan_csr.data < min_edge_support] = 0
+            pan_csr.eliminate_zeros()
+
+            has_edge = (np.diff(pan_csr.indptr) > 0) | (np.diff(pan_csr.tocsc().indptr) > 0)
+            keep_mask = (pan_counts >= 3) & has_edge
             keep_indices = np.nonzero(keep_mask)[0]
             if len(keep_indices) == 0:
                 return alt.Chart(alt.Data(values=[])).mark_point()
@@ -1159,7 +1168,7 @@ def _(
                 mode="fr",
                 dim=2,
                 iterations=220,
-                gravity=0.25,
+                gravity=1.10,
                 scale=1.0,
                 seed=42,
             )
@@ -1242,10 +1251,10 @@ def _(
                 )
             )
 
+            nodes_base = alt.Chart(alt.Data(values=node_rows)).transform_filter(alt.datum.max_edge >= edge_param)
+
             nodes_chart = (
-                alt.Chart(alt.Data(values=node_rows))
-                .mark_point(filled=True, stroke="#0f172a", strokeWidth=1.5)
-                .transform_filter(alt.datum.max_edge >= edge_param)
+                nodes_base.mark_point(filled=True, stroke="#0f172a", strokeWidth=1.5)
                 .encode(
                     x=alt.X("x:Q", scale=alt.Scale(domain=[-1.15, 1.15]), axis=None),
                     y=alt.Y("y:Q", scale=alt.Scale(domain=[-1.15, 1.15]), axis=None),
@@ -1261,15 +1270,10 @@ def _(
                 .add_params(edge_param)
             )
 
-            labels_chart = (
-                alt.Chart(alt.Data(values=node_rows))
-                .mark_text(dy=-15, fontSize=10, fontWeight="bold", color="#0f172a")
-                .transform_filter(alt.datum.max_edge >= edge_param)
-                .encode(
-                    x="x:Q",
-                    y="y:Q",
-                    text="short_label:N",
-                )
+            labels_chart = nodes_base.mark_text(dy=-15, fontSize=10, fontWeight="bold", color="#0f172a").encode(
+                x="x:Q",
+                y="y:Q",
+                text="short_label:N",
             )
 
             return (edges_chart + nodes_chart + labels_chart).properties(
@@ -1410,8 +1414,7 @@ def _(
     present_role_colors = [GENE_ROLE_COLORS.get(r, "#94a3b8") for r in present_roles]
 
     meta_banner = (
-        alt.Chart(alt.Data(values=all_meta_rows))
-        .transform_filter(alt.datum.record_label == record_param)
+        alt.Chart()
         .mark_text(align="left", baseline="middle", fontSize=12.5, fontWeight="bold", color="#0f172a")
         .encode(
             x=alt.value(8),
@@ -1420,8 +1423,7 @@ def _(
         )
     )
     csdb_banner = (
-        alt.Chart(alt.Data(values=all_meta_rows))
-        .transform_filter(alt.datum.record_label == record_param)
+        alt.Chart()
         .mark_text(align="left", baseline="middle", fontSize=11, font="JetBrains Mono, monospace", color="#059669")
         .encode(
             x=alt.value(8),
@@ -1429,7 +1431,11 @@ def _(
             text="csdb_text:N",
         )
     )
-    banner_chart = (meta_banner + csdb_banner).properties(width=820, height=44)
+    banner_chart = (
+        alt.layer(meta_banner, csdb_banner, data=alt.Data(values=all_meta_rows))
+        .transform_filter(alt.datum.record_label == record_param)
+        .properties(width=820, height=44)
+    )
 
     loc_edges_chart = (
         alt.Chart(alt.Data(values=all_locus_edges))
@@ -1444,8 +1450,7 @@ def _(
     )
 
     loc_nodes_chart = (
-        alt.Chart(alt.Data(values=all_locus_nodes))
-        .transform_filter(alt.datum.record_label == record_param)
+        alt.Chart()
         .mark_point(filled=True, stroke="#0f172a", strokeWidth=1.4)
         .encode(
             x=alt.X("x:Q", scale=x_loc_scale, axis=None),
@@ -1478,8 +1483,7 @@ def _(
     )
 
     loc_labels_chart = (
-        alt.Chart(alt.Data(values=all_locus_nodes))
-        .transform_filter(alt.datum.record_label == record_param)
+        alt.Chart()
         .mark_text(dy=-22, fontSize=10, fontWeight="bold", color="#334155")
         .encode(
             x=alt.X("x:Q", scale=x_loc_scale, axis=None),
@@ -1489,8 +1493,8 @@ def _(
     )
 
     loc_rxn_chart = (
-        alt.Chart(alt.Data(values=[r for r in all_locus_nodes if r["is_assigned"]]))
-        .transform_filter(alt.datum.record_label == record_param)
+        alt.Chart()
+        .transform_filter(alt.datum.is_assigned)
         .mark_text(dy=24, fontSize=9, fontWeight="bold", color="#059669")
         .encode(
             x=alt.X("x:Q", scale=x_loc_scale, axis=None),
@@ -1499,7 +1503,14 @@ def _(
         )
     )
 
-    top_locus_panel = (loc_edges_chart + loc_nodes_chart + loc_labels_chart + loc_rxn_chart).properties(
+    loc_nodes_layer = alt.layer(
+        loc_nodes_chart,
+        loc_labels_chart,
+        loc_rxn_chart,
+        data=alt.Data(values=all_locus_nodes),
+    ).transform_filter(alt.datum.record_label == record_param)
+
+    top_locus_panel = (loc_edges_chart + loc_nodes_layer).properties(
         width=820,
         height=185,
         title="1. Biosynthetic Gene Cluster — LocusPlotter (Strand-Aware Arrows Coloured by GeneRole; Hover Gene to Highlight Assigned Sugar/Linkage)",
@@ -1509,12 +1520,9 @@ def _(
     x_gly_scale = alt.Scale(domain=[-1.18, 1.18])
     y_gly_scale = alt.Scale(domain=[-0.82, 0.92])
 
-    gly_intra_edges = [e for e in all_glycan_edges if not e["is_polymer"]]
-    gly_poly_edges = [e for e in all_glycan_edges if e["is_polymer"]]
-
     gly_intra_chart = (
-        alt.Chart(alt.Data(values=gly_intra_edges))
-        .transform_filter(alt.datum.record_label == record_param)
+        alt.Chart()
+        .transform_filter(~alt.datum.is_polymer)
         .mark_rule(color="#1e293b", strokeWidth=2.6)
         .encode(
             x=alt.X("x:Q", scale=x_gly_scale, axis=None),
@@ -1531,8 +1539,8 @@ def _(
     )
 
     gly_poly_chart = (
-        alt.Chart(alt.Data(values=gly_poly_edges))
-        .transform_filter(alt.datum.record_label == record_param)
+        alt.Chart()
+        .transform_filter(alt.datum.is_polymer)
         .mark_rule(color="#d97706", strokeWidth=2.4, strokeDash=[6, 4])
         .encode(
             x=alt.X("x:Q", scale=x_gly_scale, axis=None),
@@ -1548,8 +1556,7 @@ def _(
     )
 
     gly_edge_text = (
-        alt.Chart(alt.Data(values=all_glycan_edges))
-        .transform_filter(alt.datum.record_label == record_param)
+        alt.Chart()
         .mark_text(fontSize=9.5, fontWeight="bold", color="#334155")
         .encode(
             x=alt.X("mx:Q", scale=x_gly_scale, axis=None),
@@ -1558,9 +1565,15 @@ def _(
         )
     )
 
+    gly_edges_layer = alt.layer(
+        gly_intra_chart,
+        gly_poly_chart,
+        gly_edge_text,
+        data=alt.Data(values=all_glycan_edges),
+    ).transform_filter(alt.datum.record_label == record_param)
+
     gly_nodes_chart = (
-        alt.Chart(alt.Data(values=all_glycan_nodes))
-        .transform_filter(alt.datum.record_label == record_param)
+        alt.Chart()
         .mark_point(filled=True, stroke="#0f172a", strokeWidth=1.8)
         .encode(
             x=alt.X("x:Q", scale=x_gly_scale, axis=None),
@@ -1577,12 +1590,10 @@ def _(
                 alt.Tooltip("assigned_enzyme:N", title="Assigned Enzyme"),
             ],
         )
-        .add_params(gene_hover)
     )
 
     gly_node_text = (
-        alt.Chart(alt.Data(values=all_glycan_nodes))
-        .transform_filter(alt.datum.record_label == record_param)
+        alt.Chart()
         .mark_text(dy=24, fontSize=10, fontWeight="bold", color="#0f172a")
         .encode(
             x=alt.X("x:Q", scale=x_gly_scale, axis=None),
@@ -1591,9 +1602,13 @@ def _(
         )
     )
 
-    bottom_glycan_panel = (
-        gly_intra_chart + gly_poly_chart + gly_edge_text + gly_nodes_chart + gly_node_text
-    ).properties(
+    gly_nodes_layer = alt.layer(
+        gly_nodes_chart,
+        gly_node_text,
+        data=alt.Data(values=all_glycan_nodes),
+    ).transform_filter(alt.datum.record_label == record_param)
+
+    bottom_glycan_panel = (gly_edges_layer + gly_nodes_layer).properties(
         width=820,
         height=245,
         title="2. SNFG Polysaccharide Repeating-Unit Graph — GlycanPlotter (Right-to-Left Reducing End; Hover Sugar/Bond to Highlight Gene)",
@@ -1607,9 +1622,9 @@ def _(
 
     # Pan-Graphs via LayoutEngine
     pan_glycan_chart = glycan_plotter.plot_pan_graph(db.glycans, min_edge_support=5)
-    pan_locus_chart = locus_plotter.plot_pan_graph(paired_db.loci, min_node_count=3, min_edge_support=2)
+    pan_locus_chart = locus_plotter.plot_pan_graph(paired_db.loci, min_node_count=4, min_edge_support=3)
 
-    # Build flat table rows for all 1,419 records
+    # Build compact flat table rows for curated records
     table_rows: list[dict[str, Any]] = []
     for idx_r in range(len(db)):
         r_obj = db[idx_r]
@@ -1621,21 +1636,18 @@ def _(
         )
         table_rows.append(
             {
-                "Record ID": r_obj.compound_key.decode("utf-8", errors="replace"),
+                "Record": r_obj.compound_key.decode("utf-8", errors="replace"),
                 "Organism": r_obj.organism.decode("utf-8", errors="replace"),
                 "Serotype": r_obj.serotype.decode("utf-8", errors="replace") or "—",
                 "Antigen": r_obj.antigen_type.decode("utf-8", errors="replace") or "—",
                 "Archetype": r_obj.archetype.name or "UNKNOWN",
-                "Assembly / BGC": r_obj.assembly_id.decode("utf-8", errors="replace") or "—",
+                "Assembly": r_obj.assembly_id.decode("utf-8", errors="replace") or "—",
                 "ORFs": n_orfs_l,
-                "Residues": n_nodes_g,
+                "Sugars": n_nodes_g,
                 "Bonds": n_edges_g,
-                "Align Score": round(float(r_obj.alignment_score), 3),
-                "CSDB Linear Structure": r_obj.structure_linear.decode("utf-8", errors="replace"),
-                "Aligned Gene→Glycan Reactions": rxn_summary,
-                "PMID": int(r_obj.pmid) if r_obj.pmid > 0 else None,
-                "Year": int(r_obj.publication_year) if r_obj.publication_year > 0 else None,
-                "GlyTouCan": r_obj.glytoucan_id.decode("utf-8", errors="replace") or "—",
+                "Score": round(float(r_obj.alignment_score), 3),
+                "CSDB Linear": r_obj.structure_linear.decode("utf-8", errors="replace"),
+                "Aligned Reactions": rxn_summary,
             }
         )
 
@@ -1653,88 +1665,69 @@ def _(
 
 
 @app.cell
-def _(
-    db,
-    mo,
-    paired_db,
-    paired_interactive_chart,
-    pan_glycan_chart,
-    pan_locus_chart,
-    table_rows,
-):
+def _(db, mo, paired_db, paired_interactive_chart):
     _total_recs = len(db)
     _paired_recs = len(paired_db)
     _total_assigns = int(db.assignments.total_assignments)
     _unique_orgs = len(set(db.organisms.tolist()))
 
-    _records_table = mo.ui.table(
-        table_rows,
-        pagination=True,
-        page_size=15,
-        selection=None,
-        label=f"Search & Filter All {_total_recs:,} Curated KBank Glycan–Locus Records (`src/kbank/data/glycans.npz`)",
+    mo.vstack(
+        [
+            mo.md(
+                f"## 1. Interactive Paired `LocusPlotter` + `GlycanPlotter` (SNFG) Explorer\n"
+                f"**`{_total_recs:,}` Curated Surface Polysaccharides** · **`{_unique_orgs}` Bacterial Species** · "
+                f"**`{_paired_recs:,}` Paired `SeroGen` Loci** · **`{_total_assigns:,}` Bipartite `GeneGlycanAssignments`**\n\n"
+                "Use the **Select Paired Glycan–Locus Record** dropdown below the chart to switch across curated "
+                "capsular and O-antigen loci, and **hover over any gene arrow** to highlight its cross-domain "
+                "`GeneGlycanAssignment` in the SNFG repeating-unit graph."
+            ),
+            paired_interactive_chart,
+        ],
+        gap=0.6,
     )
+    return
 
-    _explorer_tabs = mo.ui.tabs(
-        {
-            "1. Paired Locus & SNFG Glycan Explorer": mo.vstack(
-                [
-                    mo.md(
-                        "### Interactive Paired `LocusPlotter` + `GlycanPlotter` View\n"
-                        "Use the **Select Paired Glycan–Locus Record** dropdown below the chart to switch across curated "
-                        "capsular and O-antigen loci, and **hover over any gene arrow or SNFG sugar symbol** to highlight "
-                        "its cross-domain `GeneGlycanAssignment`."
-                    ),
-                    paired_interactive_chart,
-                ],
-                gap=0.6,
+
+@app.cell
+def _(mo, pan_glycan_chart, pan_locus_chart):
+    mo.vstack(
+        [
+            mo.md(
+                "## 2. 2D Consensus Pan-Graphs (`Glycans.as_pan_graph()` & `Loci.as_pan_graph()` via `LayoutEngine`)\n"
+                "2D Fruchterman–Reingold force-directed layouts of recurring **SNFG monosaccharide/modifier transitions** "
+                "and **`GeneNode(ROLE_ID, CLUSTER_ID)` synteny transitions** across KBank. Use the interactive sliders "
+                "below each network to filter by minimum bond or synteny edge support."
             ),
-            "2. Pan-Glycan Network (SNFG + LayoutEngine)": mo.vstack(
-                [
-                    mo.md(
-                        "### Pan-Glycan Monosaccharide Transition Network (`Glycans.as_pan_graph()` + `LayoutEngine`)\n"
-                        "2D Fruchterman-Reingold force-directed layout of all recurring monosaccharide and modifier nodes "
-                        "across KBank, rendered with official **SNFG shapes and stereochemical colours**."
-                    ),
-                    pan_glycan_chart,
-                ],
-                gap=0.6,
-            ),
-            "3. Pan-Locus Synteny Network (LocusPlotter + LayoutEngine)": mo.vstack(
-                [
-                    mo.md(
-                        "### Pan-Locus Homology-Cluster Synteny Network (`Loci.as_pan_graph()` + `LayoutEngine`)\n"
-                        "2D Fruchterman-Reingold force-directed layout of recurring `GeneNode(ROLE_ID, CLUSTER_ID)` "
-                        "states and directional intergenic synteny transitions across paired biosynthetic gene clusters."
-                    ),
-                    pan_locus_chart,
-                ],
-                gap=0.6,
-            ),
-            f"4. Search All {_total_recs:,} Records": mo.vstack(
-                [
-                    mo.md(
-                        f"### Complete Curated KBank Registry (`{_total_recs:,}` Records · `{_paired_recs:,}` Locus-Paired · `{_total_assigns:,}` Assignments)\n"
-                        "Use the search bar and column headers to filter and sort by **Organism**, **Serotype**, "
-                        "**Antigen**, **Archetype**, **Assembly Accession**, **CSDB Linear Structure**, or **Aligned Reactions**."
-                    ),
-                    _records_table,
-                ],
-                gap=0.6,
-            ),
-        }
+            pan_glycan_chart,
+            pan_locus_chart,
+        ],
+        gap=0.8,
     )
+    return
+
+
+@app.cell
+def _(db, mo, paired_db, table_rows):
+    _total_recs = len(db)
+    _paired_recs = len(paired_db)
+    _total_assigns = int(db.assignments.total_assignments)
 
     mo.vstack(
         [
             mo.md(
-                f"## KBank Geno-Glycomic Database Explorer\n"
-                f"**`{_total_recs:,}` Curated Surface Polysaccharides** · **`{_unique_orgs}` Bacterial Species** · "
-                f"**`{_paired_recs:,}` Paired `SeroGen` Loci** · **`{_total_assigns:,}` Bipartite `GeneGlycanAssignments`**"
+                f"## 3. Search & Filter All `{_total_recs:,}` Curated KBank Records (`{_paired_recs:,}` Locus-Paired · `{_total_assigns:,}` Assignments)\n"
+                "Use the search bar and column headers to filter and sort by **Organism**, **Serotype**, **Antigen**, "
+                "**Archetype**, **Assembly**, **CSDB Linear** structure, or **Aligned Reactions**."
             ),
-            _explorer_tabs,
+            mo.ui.table(
+                table_rows,
+                pagination=True,
+                page_size=15,
+                selection=None,
+                label=f"KBank Geno-Glycomic Registry ({_total_recs:,} Records)",
+            ),
         ],
-        gap=0.75,
+        gap=0.6,
     )
     return
 
