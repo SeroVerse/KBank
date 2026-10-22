@@ -27,6 +27,7 @@ app = marimo.App(
 
 @app.cell
 def _():
+    import json
     from abc import ABC, abstractmethod
     from collections import Counter, defaultdict
     from collections.abc import Sequence
@@ -56,6 +57,11 @@ def _():
     from kbank.io.csdb import CSDBParser
     from kbank.sugars import Sugars
 
+    def _compact_vegalite_renderer(spec: dict[str, Any]) -> dict[str, str]:
+        return {"application/vnd.vegalite.v6+json": json.dumps(spec, separators=(",", ":"))}
+
+    alt.renderers.register("compact_vegalite", _compact_vegalite_renderer)
+    _ = alt.renderers.enable("compact_vegalite")
     _ = alt.data_transformers.disable_max_rows()
     return (
         ABC,
@@ -472,20 +478,19 @@ def _(
                     rxn_str = "—"
                     ev_str = "UNASSIGNED"
                     score_val = 0.0
-                    gene_slot = f"UNASSIGNED_{idx}"
+                    gene_slot = f"U{idx}"
 
                 node_rows.append(
                     {
                         "record_label": record_label,
                         "gene_index": idx,
                         "gene_slot": gene_slot,
-                        "x": round(float(pos[idx, 0]), 5),
-                        "y": round(float(pos[idx, 1]), 5),
+                        "x": round(float(pos[idx, 0]), 4),
+                        "y": round(float(pos[idx, 1]), 4),
                         "role": role_name,
                         "role_abbrev": role_abbrev,
-                        "category": g_node.role.category.value,
                         "cluster_id": f"CID-{cid:04d}" if cid > 0 else "Unclustered",
-                        "strand": "+1 (Forward →)" if strand_val >= 0 else "-1 (Reverse ←)",
+                        "strand": "+1 (→)" if strand_val >= 0 else "-1 (←)",
                         "strand_dir": "forward" if strand_val >= 0 else "reverse",
                         "arrow_label": f"{role_abbrev} →" if strand_val >= 0 else f"← {role_abbrev}",
                         "coords_bp": f"{start_bp:,}..{end_bp:,} bp ({length_bp:,} bp)",
@@ -494,7 +499,6 @@ def _(
                         "evidence": ev_str,
                         "alignment_score": round(score_val, 3),
                         "is_assigned": bool(g_assigns),
-                        "color_hex": GENE_ROLE_COLORS.get(role_name, "#94a3b8"),
                     }
                 )
 
@@ -512,14 +516,11 @@ def _(
                 edge_rows.append(
                     {
                         "record_label": record_label,
-                        "source": u,
-                        "target": v,
-                        "x": round(float(pos[u, 0]), 5),
-                        "y": round(float(pos[u, 1]), 5),
-                        "x2": round(float(pos[v, 0]), 5),
-                        "y2": round(float(pos[v, 1]), 5),
+                        "x": round(float(pos[u, 0]), 4),
+                        "y": round(float(pos[u, 1]), 4),
+                        "x2": round(float(pos[v, 0]), 4),
+                        "y2": round(float(pos[v, 1]), 4),
                         "orientation": orient_str,
-                        "is_scar": bool(edge.edge_type.is_healed_scar),
                     }
                 )
             return node_rows, edge_rows
@@ -949,9 +950,7 @@ def _(
                     )
                 )
                 a_node = node_to_assign.get(idx)
-                gene_slot = (
-                    f"G{a_node.gene_index}" if (a_node is not None and a_node.gene_index >= 0) else f"NODE_{idx}"
-                )
+                gene_slot = f"G{a_node.gene_index}" if (a_node is not None and a_node.gene_index >= 0) else f"N{idx}"
                 gene_desc = (
                     f"{a_node.role.abbreviation} [ORF #{a_node.gene_index}] ({a_node.evidence.name})"
                     if a_node is not None
@@ -961,10 +960,9 @@ def _(
                 node_rows.append(
                     {
                         "record_label": record_label,
-                        "node_index": idx,
                         "gene_slot": gene_slot,
-                        "x": round(float(pos[idx, 0]), 5),
-                        "y": round(float(pos[idx, 1]), 5),
+                        "x": round(float(pos[idx, 0]), 4),
+                        "y": round(float(pos[idx, 1]), 4),
                         "sugar_name": f"{chi_str}{spec.short_label}",
                         "short_label": spec.short_label,
                         "snfg_class": spec.class_label,
@@ -972,8 +970,6 @@ def _(
                         "snfg_fill": spec.fill,
                         "ring_form": ring_str,
                         "topology_role": topo_role,
-                        "is_modifier": bool(res.is_modifier),
-                        "is_reducing_end": bool(idx == red_idx),
                         "node_size": 360 if res.is_modifier else (780 if idx == red_idx else 620),
                         "assigned_enzyme": gene_desc,
                     }
@@ -997,9 +993,7 @@ def _(
                 mx = 0.5 * (ux + vx)
                 my = 0.5 * (uy_plot + vy_plot) + (-0.11 if is_poly else 0.11)
                 a_edge = edge_to_assign.get(e_idx)
-                gene_slot = (
-                    f"G{a_edge.gene_index}" if (a_edge is not None and a_edge.gene_index >= 0) else f"EDGE_{e_idx}"
-                )
+                gene_slot = f"G{a_edge.gene_index}" if (a_edge is not None and a_edge.gene_index >= 0) else f"E{e_idx}"
                 enz_str = (
                     f"{a_edge.role.abbreviation} [ORF #{a_edge.gene_index}] ({a_edge.evidence.name}, score={a_edge.score:.2f})"
                     if a_edge is not None
@@ -1009,14 +1003,13 @@ def _(
                 edge_rows.append(
                     {
                         "record_label": record_label,
-                        "edge_index": e_idx,
                         "gene_slot": gene_slot,
-                        "x": round(ux, 5),
-                        "y": round(uy_plot, 5),
-                        "x2": round(vx, 5),
-                        "y2": round(vy_plot, 5),
-                        "mx": round(mx, 5),
-                        "my": round(my, 5),
+                        "x": round(ux, 4),
+                        "y": round(uy_plot, 4),
+                        "x2": round(vx, 4),
+                        "y2": round(vy_plot, 4),
+                        "mx": round(mx, 4),
+                        "my": round(my, 4),
                         "linkage_label": format_linkage_short(lt),
                         "bond_type": (
                             "Wzy Polymer Repeat Edge"
@@ -1320,57 +1313,49 @@ def _(
     locus_plotter = LocusPlotter(width=820, height=195)
     glycan_plotter = GlycanPlotter(width=820, height=255)
 
-    # Select a diverse, high-interest showcase of ~45 paired records across major bacterial pathogens
+    # Include all paired glycan-locus records across KBank
     showcase_records: list[tuple[str, GlycanRecord]] = []
     seen_labels: set[str] = set()
 
-    # Priority showcase targets across major bacterial genera
-    priority_indices = np.argsort(-paired_db.alignment_scores)
-    org_quotas: Counter[str] = Counter()
-
-    for idx_p in priority_indices:
+    for idx_p in range(len(paired_db)):
         rec = paired_db[int(idx_p)]
-        if rec.glycan is None or rec.locus is None or len(rec.glycan.nodes) < 2 or len(rec.locus.nodes) < 3:
+        if rec.glycan is None or rec.locus is None or len(rec.glycan.nodes) == 0 or len(rec.locus.nodes) == 0:
             continue
         org_s = rec.organism.decode("utf-8", errors="replace")
-        sero_s = rec.serotype.decode("utf-8", errors="replace")
+        sero_s = rec.serotype.decode("utf-8", errors="replace") or "Unassigned"
         ag_s = rec.antigen_type.decode("utf-8", errors="replace") or "CPS"
         asm_s = rec.assembly_id.decode("utf-8", errors="replace")
-        if not sero_s:
-            continue
-        if org_quotas[org_s] >= 12 and len(showcase_records) >= 24:
-            continue
+        comp_s = rec.compound_key.decode("utf-8", errors="replace")
         short_org = f"{org_s.split()[0][0]}. {' '.join(org_s.split()[1:])}" if len(org_s.split()) >= 2 else org_s
         lbl = f"{short_org} {sero_s} ({ag_s} · {asm_s})"
         if lbl in seen_labels:
-            continue
+            lbl = f"{short_org} {sero_s} ({ag_s} · {asm_s} · {comp_s})"
         seen_labels.add(lbl)
-        org_quotas[org_s] += 1
         showcase_records.append((lbl, rec))
-        if len(showcase_records) >= 48:
-            break
 
     showcase_records.sort(key=lambda item: item[0])
     showcase_labels = [lbl for lbl, _ in showcase_records]
+    record_ids = [str(i) for i in range(len(showcase_records))]
 
-    # Extract pooled node/edge tables across all showcase records for pure client-side Vega-Lite switching
+    # Extract pooled node/edge tables across all paired records for pure client-side Vega-Lite switching
     all_locus_nodes: list[dict[str, Any]] = []
     all_locus_edges: list[dict[str, Any]] = []
     all_glycan_nodes: list[dict[str, Any]] = []
     all_glycan_edges: list[dict[str, Any]] = []
     all_meta_rows: list[dict[str, Any]] = []
 
-    for lbl, rec in showcase_records:
+    for r_idx, (_lbl, rec) in enumerate(showcase_records):
         assert rec.locus is not None and rec.glycan is not None
+        rid = str(r_idx)
         lnodes, ledges = locus_plotter.extract_elements(
             rec.locus,
             assignments=rec.assignments,
-            record_label=lbl,
+            record_label=rid,
         )
         gnodes, gedges = glycan_plotter.extract_elements(
             rec.glycan,
             assignments=rec.assignments,
-            record_label=lbl,
+            record_label=rid,
         )
         all_locus_nodes.extend(lnodes)
         all_locus_edges.extend(ledges)
@@ -1378,7 +1363,7 @@ def _(
         all_glycan_edges.extend(gedges)
         all_meta_rows.append(
             {
-                "record_label": lbl,
+                "record_label": rid,
                 "header_text": (
                     f"{rec.organism.decode('utf-8', 'replace')} — {rec.serotype.decode('utf-8', 'replace')} "
                     f"[{rec.antigen_type.decode('utf-8', 'replace')} | {rec.archetype.name} | "
@@ -1390,14 +1375,15 @@ def _(
         )
 
     # Interactive client-side record selector + cross-panel gene<->glycan hover/click highlight
-    default_label = showcase_labels[0] if showcase_labels else ""
+    default_id = record_ids[0] if record_ids else "0"
     record_dropdown = alt.binding_select(
-        options=showcase_labels,
-        name="Select Paired Glycan–Locus Record: ",
+        options=record_ids,
+        labels=showcase_labels,
+        name=f"Select Paired Glycan–Locus Record ({len(showcase_records)} Paired Loci): ",
     )
     record_param = alt.param(
         name="selected_record",
-        value=default_label,
+        value=default_id,
         bind=record_dropdown,
     )
     gene_hover = alt.selection_point(
@@ -1665,69 +1651,74 @@ def _(
 
 
 @app.cell
-def _(db, mo, paired_db, paired_interactive_chart):
+def _(db, mo, paired_db):
     _total_recs = len(db)
     _paired_recs = len(paired_db)
     _total_assigns = int(db.assignments.total_assignments)
     _unique_orgs = len(set(db.organisms.tolist()))
 
-    mo.vstack(
-        [
-            mo.md(
-                f"## 1. Interactive Paired `LocusPlotter` + `GlycanPlotter` (SNFG) Explorer\n"
-                f"**`{_total_recs:,}` Curated Surface Polysaccharides** · **`{_unique_orgs}` Bacterial Species** · "
-                f"**`{_paired_recs:,}` Paired `SeroGen` Loci** · **`{_total_assigns:,}` Bipartite `GeneGlycanAssignments`**\n\n"
-                "Use the **Select Paired Glycan–Locus Record** dropdown below the chart to switch across curated "
-                "capsular and O-antigen loci, and **hover over any gene arrow** to highlight its cross-domain "
-                "`GeneGlycanAssignment` in the SNFG repeating-unit graph."
-            ),
-            paired_interactive_chart,
-        ],
-        gap=0.6,
+    mo.md(
+        f"## 1. Interactive Paired `LocusPlotter` + `GlycanPlotter` (SNFG) Explorer\n"
+        f"**`{_total_recs:,}` Curated Surface Polysaccharides** · **`{_unique_orgs}` Bacterial Species** · "
+        f"**`{_paired_recs:,}` Paired `SeroGen` Loci** · **`{_total_assigns:,}` Bipartite `GeneGlycanAssignments`**\n\n"
+        f"Use the **Select Paired Glycan–Locus Record ({_paired_recs} Paired Loci)** dropdown below the chart to switch "
+        "across all curated capsular and O-antigen loci, and **hover over any gene arrow** to highlight its cross-domain "
+        "`GeneGlycanAssignment` in the SNFG repeating-unit graph."
     )
     return
 
 
 @app.cell
-def _(mo, pan_glycan_chart, pan_locus_chart):
-    mo.vstack(
-        [
-            mo.md(
-                "## 2. 2D Consensus Pan-Graphs (`Glycans.as_pan_graph()` & `Loci.as_pan_graph()` via `LayoutEngine`)\n"
-                "2D Fruchterman–Reingold force-directed layouts of recurring **SNFG monosaccharide/modifier transitions** "
-                "and **`GeneNode(ROLE_ID, CLUSTER_ID)` synteny transitions** across KBank. Use the interactive sliders "
-                "below each network to filter by minimum bond or synteny edge support."
-            ),
-            pan_glycan_chart,
-            pan_locus_chart,
-        ],
-        gap=0.8,
+def _(paired_interactive_chart):
+    paired_interactive_chart
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(
+        "## 2. 2D Consensus Pan-Graphs (`Glycans.as_pan_graph()` & `Loci.as_pan_graph()` via `LayoutEngine`)\n"
+        "2D Fruchterman–Reingold force-directed layouts of recurring **SNFG monosaccharide/modifier transitions** "
+        "and **`GeneNode(ROLE_ID, CLUSTER_ID)` synteny transitions** across KBank. Use the interactive sliders "
+        "below each network to filter by minimum bond or synteny edge support."
     )
     return
 
 
 @app.cell
-def _(db, mo, paired_db, table_rows):
+def _(pan_glycan_chart):
+    pan_glycan_chart
+    return
+
+
+@app.cell
+def _(pan_locus_chart):
+    pan_locus_chart
+    return
+
+
+@app.cell
+def _(db, mo, paired_db):
     _total_recs = len(db)
     _paired_recs = len(paired_db)
     _total_assigns = int(db.assignments.total_assignments)
 
-    mo.vstack(
-        [
-            mo.md(
-                f"## 3. Search & Filter All `{_total_recs:,}` Curated KBank Records (`{_paired_recs:,}` Locus-Paired · `{_total_assigns:,}` Assignments)\n"
-                "Use the search bar and column headers to filter and sort by **Organism**, **Serotype**, **Antigen**, "
-                "**Archetype**, **Assembly**, **CSDB Linear** structure, or **Aligned Reactions**."
-            ),
-            mo.ui.table(
-                table_rows,
-                pagination=True,
-                page_size=15,
-                selection=None,
-                label=f"KBank Geno-Glycomic Registry ({_total_recs:,} Records)",
-            ),
-        ],
-        gap=0.6,
+    mo.md(
+        f"## 3. All `{_total_recs:,}` Curated KBank Records (`{_paired_recs:,}` Locus-Paired · `{_total_assigns:,}` Assignments)\n"
+        "Scroll through all curated records below (sticky headers enabled for all 1,530 entries)."
+    )
+    return
+
+
+@app.cell
+def _(db, mo, table_rows):
+    _total_recs = len(db)
+    mo.ui.table(
+        table_rows,
+        pagination=False,
+        max_height=600,
+        selection=None,
+        label=f"KBank Geno-Glycomic Registry ({_total_recs:,} Records)",
     )
     return
 
