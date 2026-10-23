@@ -1,8 +1,9 @@
 """Cross-domain geno-glycomic alignment between gene clusters and glycan graphs.
 
-Provides `TargetType`, `BiochemicalRule`, `BiochemicalRuleRegistry`, `GeneGlycanCostStrategy`,
-`GeneGlycanAligner`, and `infer_gt_linkage_assignments` for mapping biosynthetic gene clusters
-(`GeneCluster` / `GeneClusters` from `serogen`) onto bipartite carbohydrate structures
+Provides `TargetType`, `AssignmentEvidence`, `BiosyntheticRule`, `BiosyntheticRuleRegistry`,
+`PanGraphConsensusPrior`, `BiosyntheticCostStrategy`, `GeneGlycanAssignment`, `GeneGlycanAssignments`,
+`LocusMatchResult`, and `BiosyntheticAssigner` for mapping biosynthetic gene clusters
+(`Locus` / `Loci` from `serogen`) onto bipartite carbohydrate structures
 (`Glycan` / `Glycans` from `kbank`).
 """
 
@@ -14,7 +15,7 @@ from enum import IntEnum, StrEnum
 from typing import Any, Self, overload
 
 import numpy as np
-from serogen.core.collections import RaggedArrayContainer
+from serogen.core.collections import RaggedArrayContainer, ScalarView
 from serogen.core.graph.align import (
     Alignment,
     AlignmentConfig,
@@ -24,6 +25,7 @@ from serogen.core.graph.align import (
     WeisfeilerLehmanEmbedding,
 )
 from serogen.core.graph.models import TAG_EDGE, GraphModel
+from serogen.genes.cnn import GeneRoleClassifier
 from serogen.genes.roles import GeneRole
 from serogen.loci.archetypes import ArchetypeCategory, LocusArchetype
 from serogen.loci.models import GeneNode, Loci, Locus
@@ -758,7 +760,7 @@ class PanGraphConsensusPrior:
             for g_n, g_c in zip(pan_g_nodes, pan_g_counts, strict=False):
                 prior.pan_glycan_node_counts[int(g_n)] = int(g_c)
 
-        # Build Medium/Coarse superfamily cluster hierarchy when protein sequences are available (by_role=False)
+        # Build Medium/Coarse superfamily cluster hierarchy when protein sequences are available (by_role=True)
         cluster_rec_sets: dict[int, set[int]] = defaultdict(set)
         if (
             len(loci_batch.node_types) > 0
@@ -770,7 +772,7 @@ class PanGraphConsensusPrior:
                 min_identity=20.0,
                 min_bitscore=35.0,
                 inflation=1.6,
-                by_role=False,
+                by_role=True,
             )
             for fine_c, med_c in zip(loci_batch.cluster_ids, med_loci.cluster_ids, strict=False):
                 fc = int(fine_c)
@@ -1104,6 +1106,30 @@ class PanGraphConsensusPrior:
         return prior, rotated_glycans
 
 
+_LOCUS_PHAGE_PROBS_CACHE: dict[tuple[int, int, bytes], np.ndarray[tuple[int], np.dtype[np.float32]]] = {}
+
+
+def _cached_locus_phage_probs(locus: Locus | None) -> np.ndarray[tuple[int], np.dtype[np.float32]] | None:
+    """Return cached `GeneRoleClassifier.pretrained().predict_source_proba` vector for `locus`."""
+    if locus is None or len(locus.nodes) == 0 or len(locus.genes) != len(locus.nodes):
+        return None
+    trans = locus.genes.translations
+    if len(trans) != len(locus.nodes) or len(trans.seqs) == 0:
+        return None
+    key = (len(locus.nodes), len(trans.seqs), bytes(trans.seqs[:48]))
+    cached = _LOCUS_PHAGE_PROBS_CACHE.get(key)
+    if cached is not None:
+        return cached
+    try:
+        probs = GeneRoleClassifier.pretrained().predict_source_proba(trans)
+        if len(_LOCUS_PHAGE_PROBS_CACHE) > 4096:
+            _LOCUS_PHAGE_PROBS_CACHE.clear()
+        _LOCUS_PHAGE_PROBS_CACHE[key] = probs
+        return probs
+    except Exception:
+        return None
+
+
 class BiosyntheticCostStrategy(CostStrategy):
     """Domain-specific cost strategy mapping `GeneCluster` nodes to `Glycan` bipartite nodes."""
 
@@ -1141,6 +1167,7 @@ class BiosyntheticCostStrategy(CostStrategy):
 
         n_genes = len(gene_labels)
         n_glycan = len(glycan_labels)
+        phage_probs = _cached_locus_phage_probs(gene_graph if isinstance(gene_graph, Locus) else None)
         cost = np.full((n_genes, n_glycan), np.inf, dtype=np.float64)
 
         parent_to_mods: dict[int, set[int]] = {j: set() for j in range(n_glycan)}
@@ -1384,6 +1411,13 @@ class BiosyntheticCostStrategy(CostStrategy):
                                             aa_seq=aa_seq_i,
                                         )
                                         base_c += pan_bonus
+                                    if phage_probs is not None and i < len(phage_probs):
+                                        p_ph = float(phage_probs[i])
+                                        if p_ph >= 0.50:
+                                            if glycan_graph.edges[edge_k].edge_type.is_branch:
+                                                base_c -= 0.055 * p_ph
+                                            elif glycan_graph.edges[edge_k].edge_type.is_backbone:
+                                                base_c += 0.035 * p_ph
                                     if i in gt_order_norm and j in edge_step_norm:
                                         base_c += 0.045 * abs(gt_order_norm[i] - edge_step_norm[j])
                             cost[i, j] = float(np.clip(base_c, 0.005, 0.85))
@@ -1407,7 +1441,15 @@ class BiosyntheticCostStrategy(CostStrategy):
                     elif rule.target_type == TargetType.MODIFIED_MONO:
                         if res.is_modifier:
                             if j not in n_acetyl_mod_nodes and sugar_idx in rule.target_modifiers:
-                                cost[i, j] = 0.05
+                                mod_c = 0.05
+                                if (
+                                    gn.role == GeneRole.ACETYLTRANSFERASE
+                                    and phage_probs is not None
+                                    and i < len(phage_probs)
+                                    and float(phage_probs[i]) >= 0.50
+                                ):
+                                    mod_c = 0.025
+                                cost[i, j] = mod_c
                         elif gn.role == GeneRole.DEACETYLASE:
                             if j not in n_acetylated_sugar_nodes and sugar_idx in rule.target_modifiers:
                                 cost[i, j] = 0.08
@@ -1421,28 +1463,8 @@ class BiosyntheticCostStrategy(CostStrategy):
         return cost.T if is_swapped else cost
 
 
-class BiosyntheticAligner(GraphAligner):
-    """Specialized `GraphAligner` pre-configured for matching `GeneCluster` to `Glycan`."""
-
-    def __init__(
-        self,
-        config: AlignmentConfig | None = None,
-        embedding_strategy: EmbeddingStrategy | None = None,
-        sugars_db: type[Sugars] | Sugars = Sugars,
-        pan_prior: PanGraphConsensusPrior | None = None,
-    ) -> None:
-        """Initialize `GeneGlycanAligner`."""
-        cfg = config or AlignmentConfig(iterations=2, topo_weight=0.05, as_bipartite=True)
-        registry = BiosyntheticRuleRegistry(sugars_db=sugars_db)
-        super().__init__(
-            cost_strategy=BiosyntheticCostStrategy(rule_registry=registry, pan_prior=pan_prior),
-            embedding_strategy=embedding_strategy or WeisfeilerLehmanEmbedding(iterations=cfg.iterations),
-            config=cfg,
-        )
-
-
 @dataclass(slots=True, frozen=True)
-class GeneGlycanAssignment:
+class GeneGlycanAssignment(ScalarView):
     """Resolved assignment of a gene (or theoretical `GeneRole`) to a structural element in a `Glycan`."""
 
     gene_index: int
@@ -1734,23 +1756,44 @@ class LocusMatchResult:
     assignments: tuple[GeneGlycanAssignment, ...]
 
 
-class BiosyntheticAssigner:
+class BiosyntheticAssigner(GraphAligner):
     """Assigns candidate biosynthetic `Loci` to `Glycan` structures and maps individual genes to linkages/residues."""
+
+    __slots__ = ("classifier_suite",)
 
     def __init__(
         self,
-        aligner: BiosyntheticAligner | None = None,
+        config: AlignmentConfig | None = None,
+        embedding_strategy: EmbeddingStrategy | None = None,
         sugars_db: type[Sugars] | Sugars = Sugars,
         pan_prior: PanGraphConsensusPrior | None = None,
         classifier_suite: Any | None = None,
     ) -> None:
-        """Initialize `BiosyntheticAssigner` with an underlying `BiosyntheticAligner` and optional `PanGraphConsensusPrior`."""
-        self.pan_prior = pan_prior
-        self.classifier_suite = classifier_suite
-        if self.pan_prior is not None and classifier_suite is not None:
-            self.pan_prior.classifier_suite = classifier_suite
-        self.aligner = aligner if aligner is not None else BiosyntheticAligner(sugars_db=sugars_db, pan_prior=pan_prior)
-        self.registry = BiosyntheticRuleRegistry(sugars_db=sugars_db)
+        """Initialize `BiosyntheticAssigner` as a domain-configured `GraphAligner` with optional `PanGraphConsensusPrior`."""
+        if pan_prior is not None and classifier_suite is not None:
+            pan_prior.classifier_suite = classifier_suite
+        cfg = config or AlignmentConfig(iterations=2, topo_weight=0.05, as_bipartite=True)
+        registry = BiosyntheticRuleRegistry(sugars_db=sugars_db)
+        super().__init__(
+            cost_strategy=BiosyntheticCostStrategy(rule_registry=registry, pan_prior=pan_prior),
+            embedding_strategy=embedding_strategy or WeisfeilerLehmanEmbedding(iterations=cfg.iterations),
+            config=cfg,
+        )
+        object.__setattr__(self, "classifier_suite", classifier_suite)
+
+    @property
+    def registry(self) -> BiosyntheticRuleRegistry:
+        """Return the `BiosyntheticRuleRegistry` from the underlying `BiosyntheticCostStrategy`."""
+        if isinstance(self.cost_strategy, BiosyntheticCostStrategy):
+            return self.cost_strategy.registry
+        return BiosyntheticRuleRegistry()
+
+    @property
+    def pan_prior(self) -> PanGraphConsensusPrior | None:
+        """Return the active `PanGraphConsensusPrior` from the underlying `BiosyntheticCostStrategy`."""
+        if isinstance(self.cost_strategy, BiosyntheticCostStrategy):
+            return self.cost_strategy.pan_prior
+        return None
 
     _LPS_PRIMARY_INIT_SUGARS: frozenset[bytes] = frozenset(
         {
@@ -1883,7 +1926,7 @@ class BiosyntheticAssigner:
             return ArchetypeCategory.O_ANTIGEN, LocusArchetype.LPS_ABC
         if "lps_wzy" in h:
             return ArchetypeCategory.O_ANTIGEN, LocusArchetype.LPS_WZY
-        if "teichoic" in h or "wta" in h or "lta" in h:
+        if h.startswith(("wta", "lta", "teichoic")):
             return ArchetypeCategory.OTHER, LocusArchetype.TEICHOIC_ACID
         if "alginate" in h:
             return ArchetypeCategory.EXOPOLYSACCHARIDE, LocusArchetype.EPS_ALGINATE
@@ -1898,9 +1941,22 @@ class BiosyntheticAssigner:
         if any(k in h for k in ("cps", "k-antigen", "k antigen", "capsul", "vi-antigen", "vi antigen")):
             return ArchetypeCategory.CAPSULE, None
         if any(
-            k in h for k in ("o-antigen", "o antigen", "ops", "lps", "los", "lipopolysaccharide", "lipooligosaccharide")
+            k in h
+            for k in (
+                "o-antigen",
+                "o antigen",
+                "o-specific",
+                "o-polysaccharide",
+                "ops",
+                "lps",
+                "los",
+                "lipopolysaccharide",
+                "lipooligosaccharide",
+            )
         ):
             return ArchetypeCategory.O_ANTIGEN, None
+        if any(k in h for k in ("teichoic", "wta", "lta")):
+            return ArchetypeCategory.OTHER, LocusArchetype.TEICHOIC_ACID
         if any(k in h for k in ("eps", "exopolysaccharide", "biofilm")):
             return ArchetypeCategory.EXOPOLYSACCHARIDE, None
 
@@ -2205,10 +2261,14 @@ class BiosyntheticAssigner:
                     if counts_map.get(int(locus.nodes[extra_i].cluster_id), 0) <= 8:
                         dup_rescue_set.add(extra_i)
 
+        phage_probs = _cached_locus_phage_probs(locus)
+
         candidates: list[tuple[int, int, int, int, int]] = []
         for i, nd in enumerate(locus.nodes):
             bp_len = int(gene_lengths[i]) if i < len(gene_lengths) else 1000
             if bp_len < 420:
+                continue
+            if phage_probs is not None and i < len(phage_probs) and float(phage_probs[i]) >= 0.60:
                 continue
             c_freq = counts_map.get(int(nd.cluster_id), 0)
             dist = min(abs(i - a_i) for a_i in cassette_anchors)
@@ -2280,26 +2340,28 @@ class BiosyntheticAssigner:
 
         active_prior = pan_prior if pan_prior is not None else self.pan_prior
         if alignment is None:
-            if (
-                active_prior is not None
-                and isinstance(self.aligner.cost_strategy, BiosyntheticCostStrategy)
-                and self.aligner.cost_strategy.pan_prior is not active_prior
-            ):
-                temp_aligner = BiosyntheticAligner(
-                    config=self.aligner.config,
-                    embedding_strategy=self.aligner.embedding_strategy,
+            if active_prior is not None and active_prior is not self.pan_prior:
+                temp_assigner = BiosyntheticAssigner(
+                    config=self.config,
+                    embedding_strategy=self.embedding_strategy,
+                    sugars_db=self.registry.sugars_db,
                     pan_prior=active_prior,
+                    classifier_suite=self.classifier_suite,
                 )
-                alignment = temp_aligner.align(locus, glycan)
+                alignment = temp_assigner.align(locus, glycan)
             else:
-                alignment = self.aligner.align(locus, glycan)
+                alignment = self.align(locus, glycan)
 
         _, cluster_labels = locus.as_graph(as_bipartite=True)
         _, glycan_labels = glycan.as_graph(as_bipartite=True)
         n_res = len(glycan.nodes)
         n_genes = len(locus.nodes)
 
-        cost_strat = BiosyntheticCostStrategy(rule_registry=self.registry, pan_prior=active_prior)
+        cost_strat = (
+            self.cost_strategy
+            if (isinstance(self.cost_strategy, BiosyntheticCostStrategy) and active_prior is self.pan_prior)
+            else BiosyntheticCostStrategy(rule_registry=self.registry, pan_prior=active_prior)
+        )
         c_mat = cost_strat.compute_cost(cluster_labels, glycan_labels, graph_a=locus, graph_b=glycan)
 
         completed_mod_nodes = self._find_locus_completed_mod_nodes(glycan)
@@ -3076,23 +3138,6 @@ class BiosyntheticAssigner:
 
         return tuple(merged)
 
-    def assign_gt_linkages(
-        self,
-        locus: Locus,
-        glycan: Glycan,
-        alignment: Alignment | None = None,
-    ) -> dict[int, tuple[int, LinkageType]]:
-        """Map each glycosyltransferase / polymerase / synthase in `locus` to its `Glycan` linkage."""
-        assignments: dict[int, tuple[int, LinkageType]] = {}
-        for item in self.assign_genes(locus, glycan, alignment=alignment):
-            if item.linkage is not None and item.role in (
-                GeneRole.GLYCOSYLTRANSFERASE,
-                GeneRole.POLYMERASE,
-                GeneRole.TRANSMEMBRANE_SYNTHASE,
-            ):
-                assignments[item.gene_index] = (item.bipartite_glycan_index, item.linkage)
-        return assignments
-
     def score_locus(
         self,
         locus: Locus,
@@ -3123,7 +3168,7 @@ class BiosyntheticAssigner:
                 assignments=(),
             )
 
-        alignment = self.aligner.align(locus, glycan)
+        alignment = self.align(locus, glycan)
         assignments = self.assign_genes(locus, glycan, alignment=alignment)
 
         # Count non-modifier glycosidic linkages vs GT/polymerase/synthase count
@@ -3265,18 +3310,3 @@ class BiosyntheticAssigner:
             if best.archetype.category != expected_category:
                 return None
         return best
-
-
-def infer_gt_linkage_assignments(
-    cluster: Locus,
-    glycan: Glycan,
-    alignment: Alignment | None = None,
-) -> dict[int, tuple[int, LinkageType]]:
-    """Explicit helper mapping each glycosyltransferase in a `Locus` to its `Glycan` linkage."""
-    return BiosyntheticAssigner().assign_gt_linkages(cluster, glycan, alignment=alignment)
-
-
-# Backwards-compatibility aliases
-BiochemicalRule = BiosyntheticRule
-GeneGlycanCostStrategy = BiosyntheticCostStrategy
-GeneGlycanAligner = BiosyntheticAligner

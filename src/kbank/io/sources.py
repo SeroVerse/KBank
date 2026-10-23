@@ -89,8 +89,8 @@ BACTERIAL_GENERA_RE = re.compile(
 
 SURFACE_ANTIGEN_RE = re.compile(
     r"\b("
-    r"CPS|K-antigen|K\s+antigen|capsul\w*|O-antigen|O\s+antigen|OPS|LPS|LOS|"
-    r"lipopolysaccharide|lipooligosaccharide|EPS|exopolysaccharide|teichoic|WTA|LTA|"
+    r"CPS|K-antigen|K\s+antigen|capsul\w*|O-antigen|O\s+antigen|O-specific|O-polysaccharide|O\s+polysaccharide|"
+    r"OPS|LPS|LOS|lipopolysaccharide|lipooligosaccharide|EPS|exopolysaccharide|teichoic|WTA|LTA|"
     r"surface\s+polysaccharide|cell\s+wall\s+polysaccharide|Vi-antigen"
     r")\b",
     re.IGNORECASE,
@@ -212,7 +212,21 @@ def classify_antigen_label(text: str, bio_src: str = "") -> bytes:
     low = text.lower()
     if any(k in low for k in ("k-antigen", "k antigen", "cps", "capsul", "vi-antigen", "kps")):
         return b"CPS"
-    if any(k in low for k in ("o-antigen", "o antigen", "ops", "lps", "lipopolysaccharide", "b-band", "osa")):
+    if any(
+        k in low
+        for k in (
+            "o-antigen",
+            "o antigen",
+            "o-specific",
+            "o-polysaccharide",
+            "o polysaccharide",
+            "ops",
+            "lps",
+            "lipopolysaccharide",
+            "b-band",
+            "osa",
+        )
+    ):
         return b"O-antigen"
     if any(k in low for k in ("los", "lipooligosaccharide", "outer core", "ocl")):
         return b"LOS"
@@ -469,32 +483,70 @@ def normalize_ecodab_structure(raw_struct: str) -> bytes:
     if backbone_idx < 0:
         backbone_idx = max(range(len(lines)), key=lambda i: len(lines[i].strip()))
 
-    backbone = lines[backbone_idx].strip()
+    backbone_raw = lines[backbone_idx]
 
     def _clean_token(tok: str) -> str:
         t = tok.strip()
         t = re.sub(r"\((\d+)->(\d+)\)", r"(\1-\2)", t)
         t = re.sub(r"\((\d+)-P-(\d+)\)", r"(\1-\2)", t)
+        t = re.sub(r"\((\d+)->P-(\d+)\)", r"(\1-\2)", t)
         t = re.sub(r"^->(\d+)\)", r"-\1)", t)
         t = re.sub(r"\((\d+)->$", r"(\1-", t)
         return t
 
-    s = _clean_token(backbone)
-    branch_sugars: list[str] = []
+    unit_matches = list(re.finditer(r"([a-zA-Z0-9/_-]+)(\((?:\d+|P)+->(?:P-)?\d*\)?)", backbone_raw))
+    if not unit_matches:
+        return _clean_token(backbone_raw.strip()).encode("utf-8")
+
+    branches_per_unit: list[list[str]] = [[] for _ in unit_matches]
+
     for idx, ln in enumerate(lines):
         if idx == backbone_idx:
             continue
         stripped = ln.strip()
         if stripped in ("|", "/", "\\") or re.fullmatch(r"[|/\\\s]+", stripped):
             continue
-        cleaned = _clean_token(stripped)
-        if any(c.isalpha() for c in cleaned):
-            branch_sugars.append(cleaned)
+        raw_tokens = [t for t in re.split(r"\s{2,}", stripped) if any(c.isalpha() for c in t)]
+        if not raw_tokens:
+            continue
 
-    for br in branch_sugars:
-        if re.search(r"\(\d+-\d+\)$", br):
-            s = re.sub(r"([a-zA-Z0-9]+)(\(\d+-\d+\))", rf"[{br}]\1\2", s, count=1)
+        conn_idx = idx + 1 if idx < backbone_idx else idx - 1
+        pipe_cols: list[int] = []
+        if 0 <= conn_idx < len(lines):
+            conn_ln = lines[conn_idx]
+            if re.fullmatch(r"[|/\\\s]+", conn_ln.strip()):
+                pipe_cols = [m.start() for m in re.finditer(r"[|/\\]", conn_ln)]
 
+        for t_i, tok in enumerate(raw_tokens):
+            cleaned_br = _clean_token(tok)
+            if not re.search(r"\(\d+-\d+\)$", cleaned_br):
+                continue
+            target_u = 0
+            if t_i < len(pipe_cols):
+                p_col = pipe_cols[t_i]
+                best_u = 0
+                best_d = 10**9
+                for u_i, um in enumerate(unit_matches):
+                    u_start, u_end = um.start(), um.end()
+                    d = 0 if u_start <= p_col <= u_end else min(abs(p_col - u_start), abs(p_col - u_end))
+                    if d < best_d:
+                        best_d = d
+                        best_u = u_i
+                target_u = best_u
+            elif len(unit_matches) > t_i:
+                target_u = t_i
+            branches_per_unit[target_u].append(cleaned_br)
+
+    out_parts: list[str] = []
+    last_pos = 0
+    for u_i, um in enumerate(unit_matches):
+        out_parts.append(backbone_raw[last_pos : um.start()])
+        for br in branches_per_unit[u_i]:
+            out_parts.append(f"[{br}]")
+        out_parts.append(um.group(0))
+        last_pos = um.end()
+    out_parts.append(backbone_raw[last_pos:])
+    s = _clean_token("".join(out_parts))
     return s.encode("utf-8")
 
 
@@ -1170,35 +1222,77 @@ async def fetch_kegg_glycan_records(
                     name_str = m_name.group(1).strip() if m_name else ""
                     m_comm = re.search(r"^COMMENT\s+(.+)$", entry_txt, re.MULTILINE)
                     comm_str = m_comm.group(1).strip() if m_comm else ""
+                    m_brite = re.search(rf"^\s+{re.escape(gid)}\s+(.+)$", entry_txt, re.MULTILINE)
+                    brite_str = m_brite.group(1).strip() if m_brite else ""
 
-                    org_b = b"Bacteria (KEGG pathway)"
-                    m_org = BACTERIAL_GENERA_RE.search(f"{name_str} {comm_str}")
-                    if m_org:
-                        org_b, _, _ = parse_organism_and_strain(f"{name_str} {comm_str}"[m_org.start() :])
+                    combined_desc = " ".join(s for s in (name_str, brite_str, comm_str) if s)
+                    m_org = BACTERIAL_GENERA_RE.search(combined_desc)
+                    if not m_org:
+                        continue
+
+                    ag_type = classify_antigen_label(combined_desc) or pathway_ids.get(gid, b"LPS")
+                    org_b, strain_b, sero_b = parse_organism_and_strain(
+                        combined_desc[m_org.start() :],
+                        antigen_type=ag_type,
+                        extra_text=combined_desc,
+                    )
+                    if not org_b or org_b.startswith(b"Bacteria"):
+                        continue
 
                     pmid = 0
                     m_pmid = re.search(r"PMID:\s*(\d+)", entry_txt)
                     if m_pmid:
                         pmid = int(m_pmid.group(1))
 
-                    ag_type = pathway_ids.get(gid, b"LPS")
+                    doi_b = b""
+                    m_doi = DOI_EXTRACT_RE.search(entry_txt)
+                    if m_doi:
+                        doi_b = m_doi.group(1).rstrip(".,;)").encode("utf-8")
+
+                    pub_year = 0
+                    m_year = re.search(r"^  JOURNAL\s+.*?\((\d{4})\)", entry_txt, re.MULTILINE)
+                    if m_year:
+                        pub_year = int(m_year.group(1))
+
+                    acc_b = b""
+                    m_acc = GENBANK_ACC_RE.search(f"{comm_str} {name_str}")
+                    if m_acc:
+                        acc_b = m_acc.group(1).encode("utf-8")[:32]
+
+                    gtc_b = b""
+                    m_gtc = re.search(r"GlyTouCan:\s*(G[A-Z0-9]{7})", entry_txt)
+                    if m_gtc:
+                        gtc_b = m_gtc.group(1).encode("utf-8")
+
+                    csdb_xrefs: list[bytes] = []
+                    m_ccsd = re.search(r"(?:CCSD|CSDB):\s*([0-9\s]+)", entry_txt)
+                    if m_ccsd:
+                        csdb_xrefs = [tok.encode("utf-8") for tok in m_ccsd.group(1).split() if tok.isdigit()]
+
+                    is_rep = bool(gly.has_polymer_repeat or re.search(r"^BRACKET\b", entry_txt, re.MULTILINE))
+                    notes_parts = [name_str or brite_str or comm_str or f"KEGG {ag_type.decode()}"]
+                    if csdb_xrefs:
+                        notes_parts.append(f"(CSDB:{csdb_xrefs[0].decode()})")
+
                     out.append(
                         {
                             "source_db": b"KEGG",
                             "record_id": gid.encode("utf-8"),
                             "organism": org_b,
-                            "strain": b"",
-                            "serotype": b"",
+                            "strain": strain_b,
+                            "serotype": sero_b,
                             "antigen_type": ag_type,
-                            "accession_hint": b"",
+                            "accession_hint": acc_b,
                             "structure_raw": gly.canonical,
                             "structure_linear": gly.canonical,
                             "glycan": gly,
-                            "is_repeating": False,
+                            "is_repeating": is_rep,
                             "pmid": pmid,
-                            "publication_year": 0,
-                            "doi": b"",
-                            "notes": (name_str or comm_str or f"KEGG {ag_type.decode()}").encode("utf-8")[:120],
+                            "publication_year": pub_year,
+                            "doi": doi_b,
+                            "glytoucan_id": gtc_b,
+                            "csdb_xrefs": tuple(csdb_xrefs),
+                            "notes": " ".join(notes_parts).encode("utf-8")[:160],
                         }
                     )
                 return out

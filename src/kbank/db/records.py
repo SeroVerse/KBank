@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Self, overload
 
 import numpy as np
-from serogen.core.collections import BatchedContainer
+from serogen.core.collections import BatchedContainer, RaggedArrayContainer
 from serogen.core.interval import Intervals
 from serogen.core.seq.alphabet import GeneticCode
 from serogen.core.seq.seq import Sequences
@@ -16,7 +16,7 @@ from serogen.loci.archetypes import LocusArchetype
 from serogen.loci.models import Loci, Locus
 
 from kbank.biosynthesis.align import BiosyntheticAssigner, GeneGlycanAssignments, PanGraphConsensusPrior
-from kbank.db.models import GlycanRecord
+from kbank.db.models import EntryRelation, GlycanEntry, GlycanRecord
 from kbank.glycan import Glycan, Glycans
 
 DEFAULT_DB_PATH: Path = Path(__file__).resolve().parent.parent / "data" / "glycans.npz"
@@ -125,6 +125,291 @@ def _loci_from_npz_dict(data: Any, prefix: str = "locus_") -> Loci:
 
 
 @dataclass(slots=True, frozen=True)
+class GlycanEntries(RaggedArrayContainer[Any, "GlycanEntries"]):
+    r"""Ragged Structure-of-Arrays (SoA) container mapping each `GlycanRecord` to its constituent `GlycanEntry` items.
+
+    Stores all constituent entries from `CSDB`, `ECODAB`, `EK3D`, `EPSDB`, and `KEGG` (including exact isomers,
+    cyclic shifts, modifier variants, oligosaccharide fragments, and oligomers) in contiguous 1D arrays plus an
+    embedded [`Glycans`][kbank.glycan.Glycans] batch, partitioned per record by `offsets` and `lengths`.
+    """
+
+    source_dbs: np.ndarray[tuple[int], np.dtype[np.bytes_]]
+    record_ids: np.ndarray[tuple[int], np.dtype[np.bytes_]]
+    compound_keys: np.ndarray[tuple[int], np.dtype[np.bytes_]]
+    relations: np.ndarray[tuple[int], np.dtype[np.int8]]
+    glycans: Glycans
+    is_repeating: np.ndarray[tuple[int], np.dtype[np.bool_]]
+    strains: np.ndarray[tuple[int], np.dtype[np.bytes_]]
+    serotypes: np.ndarray[tuple[int], np.dtype[np.bytes_]]
+    antigen_types: np.ndarray[tuple[int], np.dtype[np.bytes_]]
+    accession_hints: np.ndarray[tuple[int], np.dtype[np.bytes_]]
+    pmids: np.ndarray[tuple[int], np.dtype[np.int64]]
+    years: np.ndarray[tuple[int], np.dtype[np.int16]]
+    dois: np.ndarray[tuple[int], np.dtype[np.bytes_]]
+    offsets: np.ndarray[tuple[int], np.dtype[np.int32]]
+    lengths: np.ndarray[tuple[int], np.dtype[np.int32]]
+
+    def __len__(self) -> int:
+        r"""Return the number of consolidated records in the batch."""
+        return len(self.offsets)
+
+    @property
+    def total_entries(self) -> int:
+        r"""Return the total number of constituent `GlycanEntry` rows across all records in the batch."""
+        return len(self.source_dbs)
+
+    @overload
+    def __getitem__(self, item: int | np.integer[Any]) -> tuple[GlycanEntry, ...]: ...
+
+    @overload
+    def __getitem__(self, item: slice | np.ndarray[tuple[int], Any] | list[Any]) -> GlycanEntries: ...
+
+    @overload
+    def __getitem__(
+        self,
+        item: int | np.integer[Any] | slice | np.ndarray[tuple[int], Any] | list[Any],
+    ) -> tuple[GlycanEntry, ...] | GlycanEntries: ...
+
+    def __getitem__(
+        self,
+        item: int | np.integer[Any] | slice | np.ndarray[tuple[int], Any] | list[Any],
+    ) -> tuple[GlycanEntry, ...] | GlycanEntries:
+        r"""Access a single record's `GlycanEntry` tuple by integer index, or slice/mask the batch container."""
+        if isinstance(item, (int, np.integer)):
+            idx = int(item)
+            if idx < 0:
+                idx += len(self)
+            if idx < 0 or idx >= len(self):
+                raise IndexError("GlycanEntries index out of range")
+            off = int(self.offsets[idx])
+            ln = int(self.lengths[idx])
+            if ln == 0:
+                return ()
+            out: list[GlycanEntry] = []
+            for k in range(off, off + ln):
+                g_obj = self.glycans[k]
+                out.append(
+                    GlycanEntry(
+                        source_db=bytes(self.source_dbs[k]),
+                        record_id=bytes(self.record_ids[k]),
+                        relation=EntryRelation(int(self.relations[k])),
+                        glycan=g_obj if len(g_obj.nodes) > 0 else None,
+                        is_repeating=bool(self.is_repeating[k]),
+                        strain=bytes(self.strains[k]),
+                        serotype=bytes(self.serotypes[k]),
+                        antigen_type=bytes(self.antigen_types[k]),
+                        accession_hint=bytes(self.accession_hints[k]),
+                        pmid=int(self.pmids[k]),
+                        publication_year=int(self.years[k]),
+                        doi=bytes(self.dois[k]),
+                    )
+                )
+            return tuple(out)
+
+        indices, new_offsets, new_lengths, (entry_indices,) = self._slice_ragged(
+            item,
+            np.arange(self.total_entries, dtype=np.int32),
+        )
+        if len(indices) == 0:
+            return self.empty(0)
+        if len(entry_indices) == 0:
+            return self.empty(len(indices))
+        return GlycanEntries(
+            source_dbs=self.source_dbs[entry_indices],
+            record_ids=self.record_ids[entry_indices],
+            compound_keys=self.compound_keys[entry_indices],
+            relations=self.relations[entry_indices],
+            glycans=self.glycans[entry_indices],
+            is_repeating=self.is_repeating[entry_indices],
+            strains=self.strains[entry_indices],
+            serotypes=self.serotypes[entry_indices],
+            antigen_types=self.antigen_types[entry_indices],
+            accession_hints=self.accession_hints[entry_indices],
+            pmids=self.pmids[entry_indices],
+            years=self.years[entry_indices],
+            dois=self.dois[entry_indices],
+            offsets=new_offsets,
+            lengths=new_lengths,
+        )
+
+    @classmethod
+    def empty(cls, length: int = 0) -> Self:
+        r"""Create an empty `GlycanEntries` container."""
+        return cls(
+            source_dbs=np.empty(0, dtype="S16"),
+            record_ids=np.empty(0, dtype="S32"),
+            compound_keys=np.empty(0, dtype="S48"),
+            relations=np.empty(0, dtype=np.int8),
+            glycans=Glycans.empty(),
+            is_repeating=np.empty(0, dtype=np.bool_),
+            strains=np.empty(0, dtype="S1"),
+            serotypes=np.empty(0, dtype="S1"),
+            antigen_types=np.empty(0, dtype="S1"),
+            accession_hints=np.empty(0, dtype="S1"),
+            pmids=np.empty(0, dtype=np.int64),
+            years=np.empty(0, dtype=np.int16),
+            dois=np.empty(0, dtype="S1"),
+            offsets=np.zeros(length, dtype=np.int32) if length > 0 else np.empty(0, dtype=np.int32),
+            lengths=np.zeros(length, dtype=np.int32) if length > 0 else np.empty(0, dtype=np.int32),
+        )
+
+    @classmethod
+    def from_list(cls, records_entries: Sequence[Sequence[GlycanEntry]]) -> Self:
+        r"""Compile a sequence of per-record `GlycanEntry` tuples into a flat SoA container."""
+        n = len(records_entries)
+        if n == 0:
+            return cls.empty(0)
+        lengths = np.array([len(e) for e in records_entries], dtype=np.int32)
+        offsets = cls.lengths_to_offsets(lengths)
+        tot = int(offsets[-1] + lengths[-1])
+        if tot == 0:
+            return cls.empty(n)
+
+        source_dbs = np.empty(tot, dtype="S16")
+        record_ids = np.empty(tot, dtype="S32")
+        compound_keys = np.empty(tot, dtype="S48")
+        relations = np.empty(tot, dtype=np.int8)
+        is_repeating = np.empty(tot, dtype=np.bool_)
+        pmids = np.empty(tot, dtype=np.int64)
+        years = np.empty(tot, dtype=np.int16)
+
+        strain_list: list[bytes] = []
+        serotype_list: list[bytes] = []
+        antigen_type_list: list[bytes] = []
+        accession_hint_list: list[bytes] = []
+        doi_list: list[bytes] = []
+        glycan_list: list[Glycan] = []
+        empty_g = Glycan(b"", (), ())
+
+        cursor = 0
+        for rec_entries in records_entries:
+            for item in rec_entries:
+                source_dbs[cursor] = item.source_db
+                record_ids[cursor] = item.record_id
+                compound_keys[cursor] = item.compound_key
+                relations[cursor] = int(item.relation)
+                is_repeating[cursor] = item.is_repeating
+                pmids[cursor] = item.pmid
+                years[cursor] = item.publication_year
+                strain_list.append(item.strain)
+                serotype_list.append(item.serotype)
+                antigen_type_list.append(item.antigen_type)
+                accession_hint_list.append(item.accession_hint)
+                doi_list.append(item.doi)
+                glycan_list.append(item.glycan if item.glycan is not None else empty_g)
+                cursor += 1
+
+        return cls(
+            source_dbs=source_dbs,
+            record_ids=record_ids,
+            compound_keys=compound_keys,
+            relations=relations,
+            glycans=Glycans.from_list(glycan_list),
+            is_repeating=is_repeating,
+            strains=np.array(strain_list, dtype="S"),
+            serotypes=np.array(serotype_list, dtype="S"),
+            antigen_types=np.array(antigen_type_list, dtype="S"),
+            accession_hints=np.array(accession_hint_list, dtype="S"),
+            pmids=pmids,
+            years=years,
+            dois=np.array(doi_list, dtype="S"),
+            offsets=offsets,
+            lengths=lengths,
+        )
+
+    @classmethod
+    def concat(cls, batches: Iterable[Self]) -> Self:
+        r"""Concatenate multiple `GlycanEntries` containers into a single batch."""
+        batch_list = [b for b in batches if len(b) > 0]
+        if not batch_list:
+            return cls.empty(0)
+        if len(batch_list) == 1:
+            return batch_list[0]
+
+        lengths = np.concatenate([b.lengths for b in batch_list])
+        offsets = cls.lengths_to_offsets(lengths)
+        non_empty = [b for b in batch_list if b.total_entries > 0]
+        if not non_empty:
+            return cls.empty(len(lengths))
+
+        return cls(
+            source_dbs=np.concatenate([b.source_dbs for b in non_empty]),
+            record_ids=np.concatenate([b.record_ids for b in non_empty]),
+            compound_keys=np.concatenate([b.compound_keys for b in non_empty]),
+            relations=np.concatenate([b.relations for b in non_empty]),
+            glycans=Glycans.concat([b.glycans for b in non_empty]),
+            is_repeating=np.concatenate([b.is_repeating for b in non_empty]),
+            strains=np.concatenate([b.strains for b in non_empty]),
+            serotypes=np.concatenate([b.serotypes for b in non_empty]),
+            antigen_types=np.concatenate([b.antigen_types for b in non_empty]),
+            accession_hints=np.concatenate([b.accession_hints for b in non_empty]),
+            pmids=np.concatenate([b.pmids for b in non_empty]),
+            years=np.concatenate([b.years for b in non_empty]),
+            dois=np.concatenate([b.dois for b in non_empty]),
+            offsets=offsets,
+            lengths=lengths,
+        )
+
+
+def _entries_to_npz_dict(entries: GlycanEntries, prefix: str = "entry_") -> dict[str, Any]:
+    """Serialize a `GlycanEntries` SoA batch (and its embedded `Glycans`) into a flat `.npz`-ready dictionary."""
+    g = entries.glycans
+    return {
+        f"{prefix}source_dbs": entries.source_dbs,
+        f"{prefix}record_ids": entries.record_ids,
+        f"{prefix}compound_keys": entries.compound_keys,
+        f"{prefix}relations": entries.relations,
+        f"{prefix}is_repeating": entries.is_repeating,
+        f"{prefix}strains": entries.strains,
+        f"{prefix}serotypes": entries.serotypes,
+        f"{prefix}antigen_types": entries.antigen_types,
+        f"{prefix}accession_hints": entries.accession_hints,
+        f"{prefix}pmids": entries.pmids,
+        f"{prefix}years": entries.years,
+        f"{prefix}dois": entries.dois,
+        f"{prefix}offsets": entries.offsets,
+        f"{prefix}lengths": entries.lengths,
+        f"{prefix}glycan_node_types": g.node_types,
+        f"{prefix}glycan_node_offsets": g.node_offsets,
+        f"{prefix}glycan_edge_sources": g.edge_sources,
+        f"{prefix}glycan_edge_targets": g.edge_targets,
+        f"{prefix}glycan_edge_types": g.edge_types,
+        f"{prefix}glycan_edge_offsets": g.edge_offsets,
+        f"{prefix}glycan_canonicals": g.canonicals,
+    }
+
+
+def _entries_from_npz_dict(data: Any, prefix: str = "entry_") -> GlycanEntries:
+    """Deserialize a `GlycanEntries` SoA batch from a flat `.npz` archive dictionary."""
+    g = Glycans(
+        node_types=data[f"{prefix}glycan_node_types"],
+        node_offsets=data[f"{prefix}glycan_node_offsets"],
+        edge_sources=data[f"{prefix}glycan_edge_sources"],
+        edge_targets=data[f"{prefix}glycan_edge_targets"],
+        edge_types=data[f"{prefix}glycan_edge_types"],
+        edge_offsets=data[f"{prefix}glycan_edge_offsets"],
+        canonicals=data[f"{prefix}glycan_canonicals"],
+    )
+    return GlycanEntries(
+        source_dbs=data[f"{prefix}source_dbs"],
+        record_ids=data[f"{prefix}record_ids"],
+        compound_keys=data[f"{prefix}compound_keys"],
+        relations=data[f"{prefix}relations"],
+        glycans=g,
+        is_repeating=data[f"{prefix}is_repeating"],
+        strains=data[f"{prefix}strains"],
+        serotypes=data[f"{prefix}serotypes"],
+        antigen_types=data[f"{prefix}antigen_types"],
+        accession_hints=data[f"{prefix}accession_hints"],
+        pmids=data[f"{prefix}pmids"],
+        years=data[f"{prefix}years"],
+        dois=data[f"{prefix}dois"],
+        offsets=data[f"{prefix}offsets"],
+        lengths=data[f"{prefix}lengths"],
+    )
+
+
+@dataclass(slots=True, frozen=True)
 class GlycanRecords(BatchedContainer[GlycanRecord, "GlycanRecords"]):
     r"""Pure Structure-of-Arrays (SoA) batch container for consolidated bacterial glycan records.
 
@@ -157,6 +442,7 @@ class GlycanRecords(BatchedContainer[GlycanRecord, "GlycanRecords"]):
         dois: 1D array of Digital Object Identifier byte strings (`"S"`).
         glytoucan_ids: 1D array of GlyTouCan accession byte strings (`"S"`).
         notes: 1D array of curation notes and provenance tags (`"S"`).
+        entries: Embedded [`GlycanEntries`][kbank.db.records.GlycanEntries] ragged batch of all constituent source-database entries.
     """
 
     source_dbs: np.ndarray[tuple[int], np.dtype[np.bytes_]]
@@ -182,6 +468,7 @@ class GlycanRecords(BatchedContainer[GlycanRecord, "GlycanRecords"]):
     dois: np.ndarray[tuple[int], np.dtype[np.bytes_]] = field(default_factory=lambda: np.empty(0, dtype="S1"))
     glytoucan_ids: np.ndarray[tuple[int], np.dtype[np.bytes_]] = field(default_factory=lambda: np.empty(0, dtype="S1"))
     notes: np.ndarray[tuple[int], np.dtype[np.bytes_]] = field(default_factory=lambda: np.empty(0, dtype="S1"))
+    entries: GlycanEntries = field(default_factory=lambda: GlycanEntries.empty(0))
 
     def __post_init__(self) -> None:
         n = len(self.source_dbs)
@@ -190,6 +477,28 @@ class GlycanRecords(BatchedContainer[GlycanRecord, "GlycanRecords"]):
                 arr = getattr(self, attr)
                 if len(arr) == 0:
                     object.__setattr__(self, attr, np.zeros(n, dtype="S1"))
+            if len(self.entries) == 0:
+                object.__setattr__(
+                    self,
+                    "entries",
+                    GlycanEntries(
+                        source_dbs=self.source_dbs,
+                        record_ids=self.record_ids,
+                        compound_keys=self.compound_keys,
+                        relations=np.zeros(n, dtype=np.int8),
+                        glycans=self.glycans,
+                        is_repeating=self.is_repeating,
+                        strains=self.strains,
+                        serotypes=self.serotypes,
+                        antigen_types=self.antigen_types,
+                        accession_hints=self.assembly_ids,
+                        pmids=self.pmids,
+                        years=self.years,
+                        dois=self.dois,
+                        offsets=np.arange(n, dtype=np.int32),
+                        lengths=np.ones(n, dtype=np.int32),
+                    ),
+                )
 
     def __len__(self) -> int:
         r"""Returns the total number of records in the batch container."""
@@ -201,13 +510,20 @@ class GlycanRecords(BatchedContainer[GlycanRecord, "GlycanRecords"]):
             yield self[i]
 
     def __contains__(self, item: object) -> bool:
-        r"""Checks membership by `GlycanRecord`, compound key, or assembly ID."""
+        r"""Checks membership by `GlycanRecord`, compound key, constituent entry key, or assembly ID."""
         if isinstance(item, GlycanRecord):
-            return bool(np.any(self.compound_keys == item.compound_key))
+            return bool(
+                np.any(self.compound_keys == item.compound_key)
+                or np.any(self.entries.compound_keys == item.compound_key)
+            )
         if isinstance(item, str):
             item = item.encode("utf-8")
         if isinstance(item, bytes):
-            return bool(np.any(self.compound_keys == item) or np.any(self.assembly_ids == item))
+            return bool(
+                np.any(self.compound_keys == item)
+                or np.any(self.assembly_ids == item)
+                or np.any(self.entries.compound_keys == item)
+            )
         return False
 
     @overload
@@ -258,6 +574,7 @@ class GlycanRecords(BatchedContainer[GlycanRecord, "GlycanRecords"]):
                 doi=bytes(self.dois[idx]),
                 glytoucan_id=bytes(self.glytoucan_ids[idx]),
                 notes=bytes(self.notes[idx]),
+                entries=self.entries[idx],
             )
 
         if isinstance(item, slice):
@@ -283,6 +600,7 @@ class GlycanRecords(BatchedContainer[GlycanRecord, "GlycanRecords"]):
                 dois=self.dois[item],
                 glytoucan_ids=self.glytoucan_ids[item],
                 notes=self.notes[item],
+                entries=self.entries[item],
             )
 
         arr_item = np.asarray(item)
@@ -311,6 +629,7 @@ class GlycanRecords(BatchedContainer[GlycanRecord, "GlycanRecords"]):
                 dois=self.dois[arr_item],
                 glytoucan_ids=self.glytoucan_ids[arr_item],
                 notes=self.notes[arr_item],
+                entries=self.entries[arr_item],
             )
 
         if np.issubdtype(arr_item.dtype, np.integer) or len(arr_item) == 0:
@@ -339,6 +658,7 @@ class GlycanRecords(BatchedContainer[GlycanRecord, "GlycanRecords"]):
                 dois=self.dois[indices],
                 glytoucan_ids=self.glytoucan_ids[indices],
                 notes=self.notes[indices],
+                entries=self.entries[indices],
             )
 
         raise TypeError(f"Unsupported index type: {type(item)}")
@@ -354,10 +674,35 @@ class GlycanRecords(BatchedContainer[GlycanRecord, "GlycanRecords"]):
         sero_b = serotype.encode("utf-8") if isinstance(serotype, str) else serotype
         return self[self.serotypes == sero_b]
 
-    def where_source_db(self, source: bytes | str) -> Self:
-        r"""Filters records by source database name (e.g. `b"CSDB"`, `b"ECODAB"`)."""
+    def where_source_db(self, source: bytes | str, *, include_entries: bool = False) -> Self:
+        r"""Filters records by source database name (e.g. `b"CSDB"`, `b"ECODAB"`).
+
+        If `include_entries=True`, also matches records that contain any consolidated `GlycanEntry`
+        from `source`.
+        """
         src_b = source.encode("utf-8") if isinstance(source, str) else source
-        return self[self.source_dbs == src_b]
+        mask = self.source_dbs == src_b
+        if include_entries and len(self) > 0 and self.entries.total_entries > 0:
+            entry_hits = self.entries.source_dbs == src_b
+            rec_indices = np.repeat(np.arange(len(self), dtype=np.int32), self.entries.lengths)
+            hit_recs = rec_indices[entry_hits]
+            if len(hit_recs) > 0:
+                mask = mask.copy()
+                mask[hit_recs] = True
+        return self[mask]
+
+    def where_entry_key(self, compound_key: bytes | str) -> Self:
+        r"""Filters records to those whose primary key or any constituent `GlycanEntry` key matches `compound_key`."""
+        key_b = compound_key.encode("utf-8") if isinstance(compound_key, str) else compound_key
+        mask = self.compound_keys == key_b
+        if len(self) > 0 and self.entries.total_entries > 0:
+            entry_hits = self.entries.compound_keys == key_b
+            rec_indices = np.repeat(np.arange(len(self), dtype=np.int32), self.entries.lengths)
+            hit_recs = rec_indices[entry_hits]
+            if len(hit_recs) > 0:
+                mask = mask.copy()
+                mask[hit_recs] = True
+        return self[mask]
 
     def where_assembly_id(self, assembly_id: bytes | str) -> Self:
         r"""Filters records by genome assembly or nucleotide accession."""
@@ -450,6 +795,7 @@ class GlycanRecords(BatchedContainer[GlycanRecord, "GlycanRecords"]):
             dois=np.empty(0, dtype="S1"),
             glytoucan_ids=np.empty(0, dtype="S1"),
             notes=np.empty(0, dtype="S1"),
+            entries=GlycanEntries.empty(0),
         )
 
     @classmethod
@@ -483,6 +829,7 @@ class GlycanRecords(BatchedContainer[GlycanRecord, "GlycanRecords"]):
             dois=np.concatenate([b.dois for b in batch_list]),
             glytoucan_ids=np.concatenate([b.glytoucan_ids for b in batch_list]),
             notes=np.concatenate([b.notes for b in batch_list]),
+            entries=GlycanEntries.concat([b.entries for b in batch_list]),
         )
 
     @classmethod
@@ -520,6 +867,7 @@ class GlycanRecords(BatchedContainer[GlycanRecord, "GlycanRecords"]):
         glycan_objs: list[Glycan] = []
         locus_objs: list[Locus] = []
         assign_lists: list[tuple[Any, ...]] = []
+        entries_lists: list[tuple[GlycanEntry, ...]] = []
 
         for i, r in enumerate(raw_recs):
             if r.locus is not None and len(r.locus.nodes) > 0:
@@ -599,6 +947,18 @@ class GlycanRecords(BatchedContainer[GlycanRecord, "GlycanRecords"]):
                         notes_list[i] = notes_b + tag
 
             final_glycans.append(gly)
+            if r.entries:
+                entries_lists.append(r.entries)
+            else:
+                entries_lists.append(
+                    (
+                        replace(r, glycan=gly if len(gly.nodes) > 0 else None).to_entry(
+                            EntryRelation.CANONICAL,
+                            accession_hint=r.assembly_id,
+                        ),
+                    )
+                )
+
             if not r.assignments and len(gly.nodes) > 0:
                 inferred = assigner.assign_record(
                     gly,
@@ -614,6 +974,7 @@ class GlycanRecords(BatchedContainer[GlycanRecord, "GlycanRecords"]):
 
         glycans_batch = Glycans.from_list(final_glycans)
         assignments_batch = GeneGlycanAssignments.from_list(assign_lists)
+        entries_batch = GlycanEntries.from_list(entries_lists)
 
         return cls(
             source_dbs=source_dbs,
@@ -637,6 +998,7 @@ class GlycanRecords(BatchedContainer[GlycanRecord, "GlycanRecords"]):
             dois=np.array(doi_list, dtype="S"),
             glytoucan_ids=np.array(glytoucan_id_list, dtype="S"),
             notes=np.array(notes_list, dtype="S"),
+            entries=entries_batch,
         )
 
     @classmethod
@@ -695,6 +1057,8 @@ class GlycanRecords(BatchedContainer[GlycanRecord, "GlycanRecords"]):
             assignment_scores=self.assignments.scores,
             assignment_offsets=self.assignments.offsets,
             assignment_lengths=self.assignments.lengths,
+            # GlycanEntries SoA
+            **_entries_to_npz_dict(self.entries, prefix="entry_"),
         )
         os.replace(tmp_p, p)
         return p
@@ -811,6 +1175,12 @@ class GlycanRecords(BatchedContainer[GlycanRecord, "GlycanRecords"]):
                 ]
                 assignments = GeneGlycanAssignments.from_list(fallback_lists)
 
+            entries = (
+                _entries_from_npz_dict(data, prefix="entry_")
+                if "entry_offsets" in data.files
+                else GlycanEntries.empty(0)
+            )
+
             return cls(
                 source_dbs=source_dbs,
                 record_ids=record_ids,
@@ -833,6 +1203,7 @@ class GlycanRecords(BatchedContainer[GlycanRecord, "GlycanRecords"]):
                 dois=dois,
                 glytoucan_ids=glytoucan_ids,
                 notes=notes,
+                entries=entries,
             )
 
     @classmethod

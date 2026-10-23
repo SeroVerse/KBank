@@ -401,6 +401,15 @@ def _find_glycan_subgraph_mapping(
                 e.edge_type.chemical_int for e in sup.edges
             ):
                 return None
+    else:
+        sup_s_counts: dict[int, int] = {}
+        for n in sup.nodes:
+            sup_s_counts[n.sugar] = sup_s_counts.get(n.sugar, 0) + 1
+        for n in sub.nodes:
+            rem = sup_s_counts.get(n.sugar, 0)
+            if rem <= 0:
+                return None
+            sup_s_counts[n.sugar] = rem - 1
 
     out_sub: list[list[tuple[int, LinkageType]]] = [[] for _ in range(n_sub)]
     in_sub: list[list[tuple[int, LinkageType]]] = [[] for _ in range(n_sub)]
@@ -478,12 +487,33 @@ def _find_glycan_subgraph_mapping(
             return None
         candidates.append(u_cands)
 
-    order = sorted(
-        range(n_sub),
-        key=lambda u: (len(candidates[u]), -(len(out_sub[u]) + len(in_sub[u]))),
-    )
+    # Build connected search order: start from most constrained node, then always pick an adjacent unvisited node
+    adj_undir: list[set[int]] = [set() for _ in range(n_sub)]
+    for u_i in range(n_sub):
+        for w_i, _ in out_sub[u_i]:
+            if w_i != u_i:
+                adj_undir[u_i].add(w_i)
+                adj_undir[w_i].add(u_i)
+
+    order: list[int] = []
+    in_order: set[int] = set()
+    frontier: set[int] = set()
+    while len(order) < n_sub:
+        pool = frontier if frontier else (set(range(n_sub)) - in_order)
+        nxt = min(
+            pool,
+            key=lambda u: (len(candidates[u]), -(len(out_sub[u]) + len(in_sub[u])), u),
+        )
+        order.append(nxt)
+        in_order.add(nxt)
+        frontier.discard(nxt)
+        for nb in adj_undir[nxt]:
+            if nb not in in_order:
+                frontier.add(nb)
+
     mapping: dict[int, int] = {}
     used_sup: set[int] = set()
+    steps_taken = 0
 
     def _pair_edges_compatible(
         req_links: list[LinkageType],
@@ -504,8 +534,12 @@ def _find_glycan_subgraph_mapping(
         return True
 
     def _backtrack(step: int) -> bool:
+        nonlocal steps_taken
         if step == n_sub:
             return True
+        steps_taken += 1
+        if steps_taken > 2048:
+            return False
         u = order[step]
         for v in candidates[u]:
             if v in used_sup:
@@ -1182,21 +1216,39 @@ class Glycan(GraphModel):
 
         if allow_open_repeat and len(g1.nodes) == len(g2.nodes):
             if g1.has_polymer_repeat and not g2.has_polymer_repeat:
-                return _match_glycan_subgraph(
+                if _match_glycan_subgraph(
                     g1.without_polymer_edge(),
                     g2,
                     ignore_reducing_end=ignore_reducing_end,
                     allow_wildcards=allow_wildcards,
                     require_bijection=True,
-                )
+                ):
+                    return True
+                if len(g2.edges) + 1 == len(g1.edges):
+                    return _match_glycan_subgraph(
+                        g2,
+                        g1,
+                        ignore_reducing_end=ignore_reducing_end,
+                        allow_wildcards=allow_wildcards,
+                        require_bijection=False,
+                    )
             if g2.has_polymer_repeat and not g1.has_polymer_repeat:
-                return _match_glycan_subgraph(
+                if _match_glycan_subgraph(
                     g1,
                     g2.without_polymer_edge(),
                     ignore_reducing_end=ignore_reducing_end,
                     allow_wildcards=allow_wildcards,
                     require_bijection=True,
-                )
+                ):
+                    return True
+                if len(g1.edges) + 1 == len(g2.edges):
+                    return _match_glycan_subgraph(
+                        g1,
+                        g2,
+                        ignore_reducing_end=ignore_reducing_end,
+                        allow_wildcards=allow_wildcards,
+                        require_bijection=False,
+                    )
         return False
 
     def wwl_distance(self, other: Glycan, iterations: int = 2) -> float:

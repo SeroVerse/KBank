@@ -492,13 +492,13 @@ async def _(
         .properties(title="GeneRole -> Glycan Component Assignments across KBank", width=380, height=320)
     )
 
-    _dbs, _db_counts = np.unique(glycan_records.source_dbs, return_counts=True)
+    _dbs, _db_counts = np.unique(glycan_records.entries.source_dbs, return_counts=True)
     _db_order = np.argsort(-_db_counts)
     source_summary_rows = []
     for _idx in _db_order:
         _db_b = _dbs[_idx]
         _db_name = _db_b.decode("utf-8", errors="replace")
-        _sub = glycan_records.where_source_db(_db_b)
+        _sub = glycan_records.where_source_db(_db_b, include_entries=True)
         source_summary_rows.append(
             {
                 "db": _db_name,

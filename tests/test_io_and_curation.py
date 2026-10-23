@@ -221,6 +221,7 @@ def test_build_curated_glycan_records_preconsolidates_and_pairs_locus() -> None:
     assert rec.assembly_id == b"AB123456.1"
     assert rec.doi == b"10.1000/test"
     assert rec.locus is not None
+    assert rec.glycan is not None
     # Both the fragment-grafted OAc and the locus-completed Pyr should be present!
     mod_names = {Sugars.names[n.sugar] for n in rec.glycan.nodes if n.is_modifier}
     assert mod_names == {b"OAc", b"Pyr"}
@@ -928,3 +929,380 @@ def test_relational_mpnn_acceptor_motif_and_cache_bundle(tmp_path: Path) -> None
     assert b"uid:999888777" in loaded_loci and len(loaded_loci[b"uid:999888777"][1]) == 0
     assert loaded_strains == strain_map
     assert loaded_dois == doi_map
+
+
+def test_relational_glycan_entries_curation_and_top_down_archetype_resolution(tmp_path: Path) -> None:
+    """Verify relational GlycanEntries SoA, KEGG BRACKET repeats, ECODAB multi-branch ASCII, and top-down archetypes."""
+    from kbank.db.curation import (
+        consolidate_curated_records,
+        resolve_top_down_locus_archetype,
+    )
+    from kbank.db.models import EntryRelation
+    from kbank.db.records import GlycanRecords
+
+    csdb = CSDBParser()
+    iupac = IUPACParser()
+
+    # 1. Verify KEGG KCF BRACKET polymer repeat closure & ECODAB multi-branch column-aware ASCII alignment (E. coli O27)
+    kcf_o27 = """ENTRY       G13258                      Glycan
+NODE        8
+            1   *           0.0     0.0
+            2   GalNAc      -10.0   0.0
+            3   Gal         -20.0   0.0
+            4   GlcNAc      -30.0   0.0
+            5   *           -40.0   0.0
+            6   GlcA        -10.0   10.0
+            7   Fuc         -20.0   10.0
+            8   Gal         -20.0   20.0
+EDGE        7
+            1   2:a1        1
+            2   6:b1        2:3
+            3   3:a1        2:4
+            4   7:a1        3:4
+            5   8:a1        7:3
+            6   4:b1        3:3
+            7   5           4:3
+BRACKET     1   -35.0   -5.0    -35.0   5.0
+            1   -5.0    -5.0    -5.0    5.0
+            1   -5.0    5.0     n
+///
+"""
+    g_kegg_o27 = parse_kegg_glycan_flatfile(kcf_o27, "G13258")
+    assert g_kegg_o27 is not None
+    assert g_kegg_o27.has_polymer_repeat
+    assert len(g_kegg_o27.nodes) == 6
+    assert g_kegg_o27.canonical.startswith(b"-")
+
+    ecodab_o27 = """aDGalp(1->3)aLFucp(1->4)   bDGlcpA(1->3)
+                              |               |
+        ->3)bDGlcpNAc(1->3)aDGalp(1->4)aDGalpNAc(1->"""
+    norm_o27 = normalize_ecodab_structure(ecodab_o27)
+    g_eco_o27 = parse_glycan_safe(norm_o27, csdb, iupac)
+    assert g_eco_o27 is not None
+    assert g_kegg_o27.is_isomorphic(g_eco_o27, allow_open_repeat=True)
+
+    # 2. Verify 3-stage consolidation & relational GlycanEntries across CSDB, ECODAB, and KEGG
+    g_shift = csdb.parse(b"-4)[bDGlcpA(1-3)]aDGalpNAc(1-3)bDGlcpNAc(1-3)[aDGalp(1-3)aLFucp(1-4)]aDGalp(1-")
+    g_mod = csdb.parse(b"-3)bDGlcpNAc(1-3)[aDGalp(1-3)aLFucp(1-4)]aDGalp(1-4)[OAc(1-6)][bDGlcpA(1-3)]aDGalpNAc(1-")
+    g_frag = csdb.parse(b"aDGalp(1-3)aLFucp(1-4)aDGalp")
+
+    recs_in = [
+        GlycanRecord(
+            source_db=b"ECODAB",
+            record_id=b"217",
+            organism=b"Escherichia coli",
+            strain=b"F492",
+            serotype=b"O27",
+            antigen_type=b"O-antigen",
+            structure_raw=ecodab_o27.encode("utf-8"),
+            structure_linear=norm_o27,
+            glycan=g_eco_o27,
+            is_repeating=True,
+            pmid=16466703,
+            publication_year=2006,
+        ),
+        GlycanRecord(
+            source_db=b"KEGG",
+            record_id=b"G13258",
+            organism=b"Escherichia coli",
+            strain=b"",
+            serotype=b"O27",
+            antigen_type=b"O-antigen",
+            structure_raw=b"KEGG_KCF",
+            structure_linear=g_kegg_o27.canonical,
+            glycan=g_kegg_o27,
+            is_repeating=True,
+            pmid=16466703,
+            glytoucan_id=b"G99999ZZ",
+            notes=b"O-antigen [xref_csdb=CSDB:23115]",
+        ),
+        GlycanRecord(
+            source_db=b"CSDB",
+            record_id=b"23115",
+            organism=b"Escherichia coli",
+            strain=b"F492",
+            serotype=b"O27",
+            antigen_type=b"O-antigen",
+            structure_raw=b"-4)[bDGlcpA(1-3)]aDGalpNAc(1-3)bDGlcpNAc(1-3)[aDGalp(1-3)aLFucp(1-4)]aDGalp(1-",
+            structure_linear=b"-4)[bDGlcpA(1-3)]aDGalpNAc(1-3)bDGlcpNAc(1-3)[aDGalp(1-3)aLFucp(1-4)]aDGalp(1-",
+            glycan=g_shift,
+            is_repeating=True,
+            pmid=16466703,
+        ),
+        GlycanRecord(
+            source_db=b"CSDB",
+            record_id=b"23116",
+            organism=b"Escherichia coli",
+            strain=b"F492",
+            serotype=b"O27",
+            antigen_type=b"O-antigen",
+            structure_raw=b"-3)bDGlcpNAc(1-3)[aDGalp(1-3)aLFucp(1-4)]aDGalp(1-4)[OAc(1-6)][bDGlcpA(1-3)]aDGalpNAc(1-",
+            structure_linear=b"-3)bDGlcpNAc(1-3)[aDGalp(1-3)aLFucp(1-4)]aDGalp(1-4)[OAc(1-6)][bDGlcpA(1-3)]aDGalpNAc(1-",
+            glycan=g_mod,
+            is_repeating=True,
+            pmid=16466703,
+        ),
+        GlycanRecord(
+            source_db=b"CSDB",
+            record_id=b"23117",
+            organism=b"Escherichia coli",
+            strain=b"F492",
+            serotype=b"O27",
+            antigen_type=b"O-antigen",
+            structure_raw=b"aDGalp(1-3)aLFucp(1-4)aDGalp",
+            structure_linear=b"aDGalp(1-3)aLFucp(1-4)aDGalp",
+            glycan=g_frag,
+            is_repeating=False,
+            pmid=16466703,
+        ),
+    ]
+    consolidated = consolidate_curated_records(recs_in)
+    assert len(consolidated) == 1
+    canon_rec = consolidated[0]
+    assert canon_rec.num_entries == 5
+    assert canon_rec.glytoucan_id == b"G99999ZZ"
+    assert set(canon_rec.source_databases) == {b"CSDB", b"ECODAB", b"KEGG"}
+
+    rel_by_key = {e.compound_key: e.relation for e in canon_rec.entries}
+    assert rel_by_key[canon_rec.compound_key] == EntryRelation.CANONICAL
+    assert EntryRelation.SUBGRAPH_FRAGMENT in rel_by_key.values()
+    assert any(
+        r in (EntryRelation.CYCLIC_SHIFT, EntryRelation.MODIFIER_VARIANT, EntryRelation.ISOMORPH)
+        for r in rel_by_key.values()
+    )
+
+    # 3. Verify embedded GlycanEntries SoA persistence in a single .npz file
+    db = GlycanRecords.build(consolidated)
+    assert len(db) == 1
+    assert len(db.entries.source_dbs) == 5
+    assert b"KEGG:G13258" in db
+    assert b"CSDB:23117" in db
+    assert len(db.where_entry_key(b"KEGG:G13258")) == 1
+    assert len(db.where_source_db(b"KEGG", include_entries=True)) == 1
+
+    npz_out = tmp_path / "consolidated_entries.npz"
+    db.save(npz_out)
+    reloaded = GlycanRecords.load(npz_out)
+    assert len(reloaded) == 1
+    assert reloaded[0].num_entries == 5
+    assert {e.compound_key for e in reloaded[0].entries} == {
+        b"ECODAB:217",
+        b"KEGG:G13258",
+        b"CSDB:23115",
+        b"CSDB:23116",
+        b"CSDB:23117",
+    }
+
+    # 4. Verify top-down archetype resolution (fixing E. coli O98 ECODAB:66 & rejecting cross-category mismatches)
+    from serogen.loci.archetypes import ArchetypeCategory
+
+    loc_o98 = Locus(
+        nodes=(
+            GeneNode(GeneRole.INITIATOR),
+            GeneNode(GeneRole.GLYCOSYLTRANSFERASE),
+            GeneNode(GeneRole.GLYCOSYLTRANSFERASE),
+            GeneNode(GeneRole.POLYMERASE),
+            GeneNode(GeneRole.FLIPPASE),
+        ),
+        edges=(),
+        archetype=LocusArchetype.TEICHOIC_ACID,
+    ).with_name("DQ180602.1")
+    resolved_o98, ok_o98 = resolve_top_down_locus_archetype(
+        loc_o98,
+        antigen_type=b"O-antigen",
+        expected_cat=ArchetypeCategory.O_ANTIGEN,
+        expected_arch=LocusArchetype.LPS_WZY,
+        default_arch=LocusArchetype.LPS_WZY,
+    )
+    assert ok_o98
+    assert resolved_o98 == LocusArchetype.LPS_WZY
+
+    # Cross-category mismatch: CPS_ABC record vs. LPS_WZY locus must be rejected
+    from dataclasses import replace
+
+    loc_lps_wzy = replace(loc_o98, archetype=LocusArchetype.LPS_WZY)
+    _, ok_rejected = resolve_top_down_locus_archetype(
+        loc_lps_wzy,
+        antigen_type=b"CPS (Group 2)",
+        expected_cat=ArchetypeCategory.CAPSULE,
+        expected_arch=LocusArchetype.CPS_ABC,
+        default_arch=LocusArchetype.CPS_ABC,
+    )
+    assert not ok_rejected
+
+
+def test_curation_domain_objects_and_tier_hierarchy(tmp_path: Path) -> None:
+    """Verify `GlycanFingerprints` & `LociCacheBundle` (`RaggedArrayContainer` + `ScalarView`) and `LocusResolutionTier`."""
+    from dataclasses import replace
+
+    import numpy as np
+    from serogen.core.collections import ScalarView
+    from serogen.core.graph.align import GraphAligner
+
+    from kbank.biosynthesis.align import BiosyntheticAssigner, GeneGlycanAssignment
+    from kbank.db.curation import (
+        ClusterMember,
+        ExplicitAccessionTier,
+        GlycanFingerprint,
+        GlycanFingerprints,
+        LociCacheBundle,
+        LociCacheEntry,
+        LocusQueryContext,
+        LocusResolutionTier,
+        NuccoreSummary,
+        PubMedElinkTier,
+        RecordCluster,
+        SerotypeTokenIndex,
+        StrainAssemblyTier,
+        TaxonCatalogTier,
+        _iter_candidate_pools,
+    )
+    from kbank.db.models import EntryRelation
+
+    assert issubclass(BiosyntheticAssigner, GraphAligner)
+    assert ScalarView in GeneGlycanAssignment.__mro__
+    assert ScalarView in GlycanRecord.__mro__
+    assert ScalarView in GlycanFingerprint.__mro__
+    assert ScalarView in LociCacheEntry.__mro__
+
+    csdb = CSDBParser()
+    g_rep = csdb.parse(b"-3)bDGalp(1-4)aDGlcp(1-3)bDGlcpNAc(1-")
+    g_shift = csdb.parse(b"-4)aDGlcp(1-3)bDGlcpNAc(1-3)bDGalp(1-")
+    g_frag = csdb.parse(b"bDGalp(1-4)[OAc(1-6)]aDGlcp")
+    g_oligo = csdb.parse(b"bDGalp(1-4)aDGlcp(1-3)bDGlcpNAc(1-3)bDGalp(1-4)aDGlcp(1-3)bDGlcpNAc")
+    g_other = csdb.parse(b"-4)aLRhap(1-3)bDManp(1-")
+
+    fps = GlycanFingerprints.from_list([g_rep, g_shift, g_frag, g_oligo, g_other])
+    assert len(fps) == 5
+    fp_rep, fp_shift, fp_frag, fp_oligo, fp_other = fps[0], fps[1], fps[2], fps[3], fps[4]
+
+    assert fp_rep.can_be_isomorphic(fp_shift)
+    assert not fp_rep.can_be_isomorphic(fp_other)
+    assert fp_frag.can_be_subgraph_of(fp_rep)
+    assert not fp_other.can_be_subgraph_of(fp_rep)
+    assert fp_oligo.can_be_oligomer_of(fp_rep)
+    assert not fp_rep.can_be_oligomer_of(fp_oligo)
+
+    # Verify RaggedArrayContainer slicing, boolean masking, concat, and batch Numba filter kernels on GlycanFingerprints
+    assert len(fps[1:4]) == 3
+    assert len(fps[np.array([True, False, True, False, False])]) == 2
+    assert len(GlycanFingerprints.concat([fps[:2], fps[2:]])) == 5
+
+    cand_arr = np.array([0, 1, 4], dtype=np.int32)
+    iso_pos = fps.filter_isomorphic_candidates(0, cand_arr)
+    assert list(cand_arr[iso_pos]) == [0, 1]
+
+    sub_pos, sub_modes = fps.filter_sub_or_oligo_candidates(
+        2, False, np.array([0, 4], dtype=np.int32), np.array([True, True])
+    )
+    assert list(sub_pos) == [0] and int(sub_modes[0]) & 1
+
+    # Verify RecordCluster promotes 1x repeating monomer over 2x oligomer and grafts fragment modifiers
+    rec_oligo = GlycanRecord(
+        source_db=b"CSDB",
+        record_id=b"OLIGO_2X",
+        organism=b"Escherichia coli",
+        strain=b"S1",
+        serotype=b"O99",
+        antigen_type=b"O-antigen",
+        glycan=g_oligo,
+        is_repeating=False,
+        pmid=111,
+    )
+    rec_monomer = GlycanRecord(
+        source_db=b"ECODAB",
+        record_id=b"MONO_1X",
+        organism=b"Escherichia coli",
+        strain=b"S1",
+        serotype=b"O99",
+        antigen_type=b"O-antigen",
+        glycan=g_rep,
+        is_repeating=True,
+        pmid=111,
+    )
+    rec_frag = GlycanRecord(
+        source_db=b"CSDB",
+        record_id=b"FRAG_OAC",
+        organism=b"Escherichia coli",
+        strain=b"S1",
+        serotype=b"O99",
+        antigen_type=b"O-antigen",
+        glycan=g_frag,
+        is_repeating=False,
+        pmid=111,
+    )
+    rec_frag = replace(
+        rec_frag,
+        entries=(rec_frag.to_entry(EntryRelation.CANONICAL, accession_hint=b"AB999999.1"),),
+    )
+
+    cluster = RecordCluster(ClusterMember(rec_oligo, fp_oligo, EntryRelation.CANONICAL))
+    cluster.add_member(rec_monomer, fp_rep)
+    cluster.add_member(rec_frag, fp_frag)
+    canon = cluster.to_canonical_record()
+    assert canon.compound_key == b"ECODAB:MONO_1X"
+    assert canon.glycan is not None and canon.glycan.num_modifiers == 1
+    rels = {e.compound_key: e.relation for e in canon.entries}
+    assert rels[b"ECODAB:MONO_1X"] == EntryRelation.CANONICAL
+    assert rels[b"CSDB:OLIGO_2X"] == EntryRelation.OLIGOMER
+    assert rels[b"CSDB:FRAG_OAC"] == EntryRelation.SUBGRAPH_FRAGMENT
+
+    # Verify SerotypeTokenIndex & NuccoreSummary matching
+    idx = SerotypeTokenIndex.build(["K2", "O4", "23F", "ATCC 13883"])
+    s_kl2 = NuccoreSummary("1", "AB123.1", "Klebsiella pneumoniae KL2 capsular locus", "ATCC 13883", "strain", True)
+    s_sal = NuccoreSummary(
+        "2", "AF456.1", "Salmonella enterica Typhimurium O-antigen gene cluster", "4", "serogroup", False
+    )
+    assert idx.match(s_kl2) == {"K2", "ATCC 13883"}
+    assert idx.match(s_sal) == {"O4"}
+
+    # Verify LociCacheBundle RaggedArrayContainer + LociCacheEntry ScalarView + LocusResolutionTier hierarchy
+    tiers: tuple[LocusResolutionTier, ...] = (
+        ExplicitAccessionTier(),
+        PubMedElinkTier(untagged_fallback=False),
+        StrainAssemblyTier(),
+        TaxonCatalogTier(),
+        PubMedElinkTier(untagged_fallback=True),
+    )
+    loc_dummy = Locus(nodes=(GeneNode(GeneRole.INITIATOR),), edges=(), archetype=LocusArchetype.LPS_WZY)
+    loci_a = Loci.from_list([loc_dummy.with_name("AB999999.1")])
+    loci_b = Loci.from_list([loc_dummy.with_name("GCF_0001.1")])
+    loci_c = Loci.from_list([loc_dummy.with_name("PMID_POOL")])
+
+    bundle = LociCacheBundle.from_dicts(
+        assembly_loci={
+            b"AB999999": (b"AB999999.1", loci_a),
+            b"GCF_0001": (b"GCF_0001.1", loci_b),
+            b"pmid:111": (b"PMID_POOL", loci_c),
+        },
+        strain_to_assembly={(b"Escherichia coli", b"S1"): b"GCF_0001"},
+        pmid_to_doi={111: b"10.1000/111"},
+    )
+    assert len(bundle) == 3
+    ent0 = bundle[0]
+    assert isinstance(ent0, LociCacheEntry) and ent0.cache_key == b"AB999999" and len(ent0.loci) == 1
+    assert len(bundle[1:]) == 2
+    assert len(LociCacheBundle.concat([bundle[:1], bundle[1:]])) == 3
+
+    bundle_npz = tmp_path / "ragged_bundle.npz"
+    bundle.save(bundle_npz)
+    reloaded_bundle = LociCacheBundle.load(bundle_npz)
+    assert len(reloaded_bundle) == 3
+    assert reloaded_bundle._assembly_loci_dict is None  # zero-copy lazy load!
+
+    ctx = LocusQueryContext.from_record(canon, reloaded_bundle)
+    assert ctx.acc_candidates == (b"AB999999.1",)
+    assert ctx.pmid_candidates == (111,)
+    assert ctx.strain_candidates == (b"S1",)
+    assert [k for t in tiers for k, _ in t.iter_cache_keys(ctx)] == [
+        b"AB999999.1",
+        b"AB999999",
+        b"pmid:111:O99",
+        b"pmid:111:S1",
+        b"GCF_0001",
+        b"pmid:111",
+    ]
+    pools, fallback_asm = _iter_candidate_pools(canon, reloaded_bundle)
+    assert fallback_asm == b"AB999999.1"
+    assert [p[0] for p in pools] == [b"AB999999.1", b"GCF_0001.1", b"PMID_POOL"]
+    assert [p[2] for p in pools] == [False, False, True]

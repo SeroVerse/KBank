@@ -193,4 +193,5 @@ def test_curated_kbank_database_invariants(tmp_path: Path) -> None:
     db.save(out_npz)
     reloaded = GlycanRecords.load(out_npz)
     assert len(reloaded) == len(db)
+    assert reloaded[0].glycan is not None and db[0].glycan is not None
     assert reloaded[0].glycan.is_isomorphic(db[0].glycan)

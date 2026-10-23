@@ -28,6 +28,7 @@ nav = [
     { "kbank.biosynthesis" = "reference/biosynthesis.md" },
   ] },
   { "Community" = [
+    "citation.md",
     "conduct.md",
     "contributing.md",
     "releases.md",
@@ -141,6 +142,7 @@ full_output = "llms-full.txt"
   { "reference/biosynthesis.md" = "kbank.biosynthesis: BiosyntheticAssigner, BiosyntheticClassifierSuite, and GlycanPredictor" },
 ]
 "Community" = [
+  { "citation.md" = "How to cite KBank in academic publications" },
   { "conduct.md" = "Contributor Covenant Code of Conduct" },
   { "contributing.md" = "Local development setup, testing, and pull request guidelines" },
   { "releases.md" = "Version history and changelog" },

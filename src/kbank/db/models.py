@@ -6,7 +6,9 @@ biosynthetic gene clusters (`Locus`, `LocusArchetype`) from `serogen`.
 """
 
 from dataclasses import dataclass
+from enum import IntEnum
 
+from serogen.core.collections import ScalarView
 from serogen.loci.archetypes import LocusArchetype
 from serogen.loci.models import Locus
 
@@ -14,8 +16,67 @@ from kbank.biosynthesis.align import GeneGlycanAssignment
 from kbank.glycan import Glycan
 
 
+class EntryRelation(IntEnum):
+    r"""Topological relationship of a source database `GlycanEntry` to its consolidated `GlycanRecord`."""
+
+    CANONICAL = 0
+    ISOMORPH = 1
+    CYCLIC_SHIFT = 2
+    MODIFIER_VARIANT = 3
+    SUBGRAPH_FRAGMENT = 4
+    OLIGOMER = 5
+
+
 @dataclass(frozen=True, slots=True)
-class GlycanRecord:
+class GlycanEntry(ScalarView):
+    r"""Immutable source-database entry contributing to a consolidated `GlycanRecord`.
+
+    Preserves the exact provenance, literature reference, strain isolate, and parsed
+    [`Glycan`][kbank.glycan.Glycan] graph (whether a canonical repeating unit, cyclic shift,
+    modifier variant, oligosaccharide fragment, or multi-repeat oligomer) from an individual
+    source database (`CSDB`, `ECODAB`, `EK3D`, `EPSDB`, or `KEGG`).
+
+    Attributes:
+        source_db: Source database identifier (`b"CSDB"`, `b"ECODAB"`, `b"EK3D"`, `b"EPSDB"`, `b"KEGG"`).
+        record_id: Primary identifier within the source database (e.g. `b"12460"`, `b"217"`, `b"G13258"`).
+        relation: Structural relationship (`EntryRelation`) relative to the consolidated canonical `Glycan`.
+        glycan: Parsed [`Glycan`][kbank.glycan.Glycan] graph for this individual entry.
+        is_repeating: Whether this specific entry represents a repeating polymer unit.
+        strain: Specific bacterial strain designation reported by this entry.
+        serotype: Serotype designation reported by this entry.
+        antigen_type: Surface polysaccharide antigen class reported by this entry.
+        accession_hint: Explicit GenBank/RefSeq nucleotide or assembly accession hint on this entry.
+        pmid: PubMed ID integer reported by this entry, or `0` if unknown.
+        publication_year: Four-digit year of publication, or `0` if unknown.
+        doi: Digital Object Identifier byte string.
+    """
+
+    source_db: bytes
+    record_id: bytes
+    relation: EntryRelation = EntryRelation.CANONICAL
+    glycan: Glycan | None = None
+    is_repeating: bool = True
+    strain: bytes = b""
+    serotype: bytes = b""
+    antigen_type: bytes = b""
+    accession_hint: bytes = b""
+    pmid: int = 0
+    publication_year: int = 0
+    doi: bytes = b""
+
+    @property
+    def compound_key(self) -> bytes:
+        r"""Global unique identifier combining source database and record ID (`b"<source_db>:<record_id>"`)."""
+        return b"%s:%s" % (self.source_db, self.record_id)
+
+    @property
+    def structure_linear(self) -> bytes:
+        r"""Canonical linear structure byte string for this entry's `Glycan`."""
+        return self.glycan.canonical if self.glycan is not None else b""
+
+
+@dataclass(frozen=True, slots=True)
+class GlycanRecord(ScalarView):
     r"""Immutable record for a bacterial surface glycan entry across integrated databases.
 
     Consolidates taxonomic metadata, literature provenance, structural notations, parsed
@@ -45,6 +106,7 @@ class GlycanRecord:
         doi: Digital Object Identifier byte string.
         glytoucan_id: GlyTouCan accession identifier (e.g. `b"G12345AB"`), or empty byte string.
         notes: Additional curation notes or cross-reference annotations.
+        entries: Tuple of constituent [`GlycanEntry`][kbank.db.models.GlycanEntry] items across integrated databases.
     """
 
     source_db: bytes
@@ -67,6 +129,7 @@ class GlycanRecord:
     doi: bytes = b""
     glytoucan_id: bytes = b""
     notes: bytes = b""
+    entries: tuple[GlycanEntry, ...] = ()
 
     @property
     def compound_key(self) -> bytes:
@@ -76,6 +139,50 @@ class GlycanRecord:
             bytes: Byte string formatted as `b"<source_db>:<record_id>"` (e.g. `b"ECODAB:70"`).
         """
         return b"%s:%s" % (self.source_db, self.record_id)
+
+    @property
+    def num_entries(self) -> int:
+        r"""Number of constituent source-database `GlycanEntry` items consolidated into this record."""
+        return len(self.entries) if self.entries else 1
+
+    @property
+    def entry_keys(self) -> tuple[bytes, ...]:
+        r"""Tuple of all constituent `b"<source_db>:<record_id>"` compound keys consolidated into this record."""
+        if self.entries:
+            return tuple(e.compound_key for e in self.entries)
+        return (self.compound_key,)
+
+    @property
+    def source_databases(self) -> tuple[bytes, ...]:
+        r"""Unique source database identifiers contributing to this consolidated record."""
+        if not self.entries:
+            return (self.source_db,)
+        seen: list[bytes] = []
+        for e in self.entries:
+            if e.source_db not in seen:
+                seen.append(e.source_db)
+        return tuple(seen)
+
+    def to_entry(
+        self,
+        relation: EntryRelation = EntryRelation.CANONICAL,
+        accession_hint: bytes = b"",
+    ) -> GlycanEntry:
+        r"""Convert this `GlycanRecord`'s primary fields into a `GlycanEntry` instance."""
+        return GlycanEntry(
+            source_db=self.source_db,
+            record_id=self.record_id,
+            relation=relation,
+            glycan=self.glycan,
+            is_repeating=self.is_repeating,
+            strain=self.strain,
+            serotype=self.serotype,
+            antigen_type=self.antigen_type,
+            accession_hint=accession_hint or self.assembly_id,
+            pmid=self.pmid,
+            publication_year=self.publication_year,
+            doi=self.doi,
+        )
 
     @property
     def has_locus(self) -> bool:

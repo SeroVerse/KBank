@@ -19,7 +19,7 @@ class KEGGParser(GlycanParser):
     def resolve_residue(self, token: str, strict: bool = False) -> ResidueType | None:
         """Resolve a KEGG KCF monosaccharide or modifier label into a `ResidueType`."""
         clean = token.strip().replace("(", "").replace(")", "")
-        if not clean:
+        if not clean or clean == "*":
             return None
 
         chi = Chirality.UNKNOWN
@@ -69,6 +69,7 @@ class KEGGParser(GlycanParser):
 
         in_node = False
         in_edge = False
+        has_bracket = False
         raw_nodes: list[tuple[int, str]] = []
         raw_edges: list[tuple[int, int, str]] = []
         composition = ""
@@ -84,6 +85,10 @@ class KEGGParser(GlycanParser):
             elif line.startswith("EDGE"):
                 in_edge = True
                 in_node = False
+            elif line.startswith("BRACKET"):
+                has_bracket = True
+                in_node = False
+                in_edge = False
             elif line and not line[0].isspace():
                 in_node = False
                 in_edge = False
@@ -102,9 +107,26 @@ class KEGGParser(GlycanParser):
                         raw_edges.append((int(s_str), int(t_str), f"{d_link}:{a_link}"))
 
         if raw_nodes:
+            star_nodes: set[int] = {kegg_idx for kegg_idx, label in raw_nodes if label.strip() == "*"}
+            poly_donor: tuple[int, str] | None = None
+            poly_acceptor: tuple[int, str] | None = None
+            if star_nodes:
+                for s_kegg, t_kegg, link_str in raw_edges:
+                    d_part, a_part = link_str.split(":", 1) if ":" in link_str else (link_str, "")
+                    if s_kegg not in star_nodes and t_kegg in star_nodes and poly_donor is None:
+                        poly_donor = (s_kegg, d_part)
+                    elif s_kegg in star_nodes and t_kegg not in star_nodes and poly_acceptor is None:
+                        poly_acceptor = (t_kegg, a_part or d_part)
+
+            # Order nodes so that if a polymer donor is identified, it becomes node 0 (reducing end)
+            ordered_raw_nodes = list(raw_nodes)
+            if poly_donor is not None:
+                pd_idx = poly_donor[0]
+                ordered_raw_nodes.sort(key=lambda item: 0 if item[0] == pd_idx else 1)
+
             id_map: dict[int, int] = {}
             nodes: list[ResidueType] = []
-            for kegg_idx, label in raw_nodes:
+            for kegg_idx, label in ordered_raw_nodes:
                 res = self.resolve_residue(label, strict=strict)
                 if res is not None:
                     if len(nodes) == 0:
@@ -130,9 +152,45 @@ class KEGGParser(GlycanParser):
                             edge_type=LinkageType(anom, donor=donor_c, acceptor=acc_c),
                         )
                     )
+
+            # Reconstruct closed polymer wrap-around edge from KEGG `*` bracket endpoints when present
+            if (
+                (has_bracket or star_nodes)
+                and poly_donor is not None
+                and poly_acceptor is not None
+                and poly_donor[0] in id_map
+                and poly_acceptor[0] in id_map
+                and id_map[poly_donor[0]] != id_map[poly_acceptor[0]]
+            ):
+                d_part = poly_donor[1]
+                a_part = poly_acceptor[1]
+                anom = Anomer.ALPHA if "a" in d_part else (Anomer.BETA if "b" in d_part else Anomer.UNKNOWN)
+                d_nums = [int(d) for d in self._RE_DIGITS.findall(d_part) if 1 <= int(d) <= 9]
+                a_nums = [int(d) for d in self._RE_DIGITS.findall(a_part) if 1 <= int(d) <= 9]
+                donor_c = d_nums[0] if d_nums else 1
+                acc_c = a_nums[0] if a_nums else 0
+                edges.append(
+                    LinkageEdge(
+                        source=id_map[poly_donor[0]],
+                        target=id_map[poly_acceptor[0]],
+                        edge_type=LinkageType(
+                            anom,
+                            donor=donor_c,
+                            acceptor=acc_c,
+                            is_backbone=True,
+                            is_polymer=True,
+                        ),
+                    )
+                )
+
             if not edges and not allow_composition:
                 raise GlycanParseError("KEGG entry has NODE definitions but 0 connected glycosidic edges.")
-            return Glycan(canonical=rec_b or b"KEGG", nodes=tuple(nodes), edges=tuple(edges))
+            if edges:
+                gly = Glycan.from_topology(nodes=tuple(nodes), edges=tuple(edges))
+                if not gly.canonical:
+                    gly = Glycan(canonical=rec_b or b"KEGG", nodes=gly.nodes, edges=gly.edges)
+                return gly
+            return Glycan(canonical=rec_b or b"KEGG", nodes=tuple(nodes), edges=())
 
         if composition and allow_composition:
             tokens = self._RE_COMP_TOKENS.findall(composition)

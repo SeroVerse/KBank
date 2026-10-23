@@ -27,7 +27,6 @@ app = marimo.App(
 
 @app.cell
 def _():
-    import json
     from abc import ABC, abstractmethod
     from collections import Counter, defaultdict
     from collections.abc import Sequence
@@ -51,14 +50,16 @@ def _():
         PanGraphConsensusPrior,
         TargetType,
     )
-    from kbank.db.models import GlycanRecord
+    from kbank.db.models import EntryRelation, GlycanRecord
     from kbank.db.records import GlycanRecords
     from kbank.glycan import Anomer, Chirality, Glycan, Glycans, LinkageType, ResidueType
     from kbank.io.csdb import CSDBParser
     from kbank.sugars import Sugars
 
     def _compact_vegalite_renderer(spec: dict[str, Any]) -> dict[str, str]:
-        return {"application/vnd.vegalite.v6+json": json.dumps(spec, separators=(",", ":"))}
+        import json as _json
+
+        return {"application/vnd.vegalite.v6+json": _json.dumps(spec, separators=(",", ":"))}
 
     alt.renderers.register("compact_vegalite", _compact_vegalite_renderer)
     _ = alt.renderers.enable("compact_vegalite")
@@ -72,6 +73,7 @@ def _():
         CSDBParser,
         Chirality,
         Counter,
+        EntryRelation,
         GeneGlycanAssignment,
         GeneNode,
         GeneRole,
@@ -1296,6 +1298,7 @@ def _(
     ARROW_REV_PATH,
     Any,
     Counter,
+    EntryRelation,
     GENE_ROLE_COLORS,
     GlycanPlotter,
     GlycanRecord,
@@ -1361,6 +1364,9 @@ def _(
         all_locus_edges.extend(ledges)
         all_glycan_nodes.extend(gnodes)
         all_glycan_edges.extend(gedges)
+        entry_summary = ", ".join(e.compound_key.decode("utf-8", "replace") for e in rec.entries[:4]) + (
+            f" (+{len(rec.entries) - 4})" if len(rec.entries) > 4 else ""
+        )
         all_meta_rows.append(
             {
                 "record_label": rid,
@@ -1368,7 +1374,8 @@ def _(
                     f"{rec.organism.decode('utf-8', 'replace')} — {rec.serotype.decode('utf-8', 'replace')} "
                     f"[{rec.antigen_type.decode('utf-8', 'replace')} | {rec.archetype.name} | "
                     f"Accession: {rec.assembly_id.decode('utf-8', 'replace')} | "
-                    f"Alignment Score: {rec.alignment_score:.2f}]"
+                    f"Entries ({rec.num_entries}): {entry_summary} | "
+                    f"Score: {rec.alignment_score:.2f}]"
                 ),
                 "csdb_text": f"CSDB Linear: {rec.structure_linear.decode('utf-8', 'replace')}",
             }
@@ -1620,9 +1627,16 @@ def _(
         rxn_summary = (
             ", ".join(a.format_short() for a in r_obj.assignments if a.is_aligned) if r_obj.assignments else "—"
         )
+        entries_str = ", ".join(
+            f"{e.compound_key.decode('utf-8', 'replace')} ({e.relation.name.lower()})"
+            if e.relation != EntryRelation.CANONICAL
+            else e.compound_key.decode("utf-8", "replace")
+            for e in r_obj.entries
+        )
         table_rows.append(
             {
                 "Record": r_obj.compound_key.decode("utf-8", errors="replace"),
+                "Entries": r_obj.num_entries,
                 "Organism": r_obj.organism.decode("utf-8", errors="replace"),
                 "Serotype": r_obj.serotype.decode("utf-8", errors="replace") or "—",
                 "Antigen": r_obj.antigen_type.decode("utf-8", errors="replace") or "—",
@@ -1634,6 +1648,7 @@ def _(
                 "Score": round(float(r_obj.alignment_score), 3),
                 "CSDB Linear": r_obj.structure_linear.decode("utf-8", errors="replace"),
                 "Aligned Reactions": rxn_summary,
+                "Database Entries": entries_str or r_obj.compound_key.decode("utf-8", errors="replace"),
             }
         )
 
@@ -1700,12 +1715,13 @@ def _(pan_locus_chart):
 @app.cell
 def _(db, mo, paired_db):
     _total_recs = len(db)
+    _total_entries = len(db.entries.source_dbs)
     _paired_recs = len(paired_db)
     _total_assigns = int(db.assignments.total_assignments)
 
     mo.md(
-        f"## 3. All `{_total_recs:,}` Curated KBank Records (`{_paired_recs:,}` Locus-Paired · `{_total_assigns:,}` Assignments)\n"
-        "Scroll through all curated records below (sticky headers enabled for all 1,530 entries)."
+        f"## 3. All `{_total_recs:,}` Canonical KBank Records (`{_total_entries:,}` Consolidated Database Entries · `{_paired_recs:,}` Locus-Paired · `{_total_assigns:,}` Assignments)\n"
+        f"Scroll through all `{_total_recs:,}` canonical `GlycanRecord` entries below (sticky headers enabled; consolidating `{_total_entries:,}` relational `GlycanEntries` across CSDB, ECODAB, EK3D, EPSDB, and KEGG)."
     )
     return
 
@@ -1713,12 +1729,13 @@ def _(db, mo, paired_db):
 @app.cell
 def _(db, mo, table_rows):
     _total_recs = len(db)
+    _total_entries = len(db.entries.source_dbs)
     mo.ui.table(
         table_rows,
         pagination=False,
         max_height=600,
         selection=None,
-        label=f"KBank Geno-Glycomic Registry ({_total_recs:,} Records)",
+        label=f"KBank Geno-Glycomic Registry ({_total_recs:,} Canonical Records · {_total_entries:,} Database Entries)",
     )
     return
 
